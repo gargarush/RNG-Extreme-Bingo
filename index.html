@@ -129,6 +129,28 @@
   .room-actions{display:flex;align-items:center;gap:8px;}
   .room-actions button{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:inherit;}
   .room-actions button:hover{border-color:var(--mark);color:var(--ink);}
+  .grid-bingo-controls{display:none;gap:8px;align-items:center;flex-wrap:wrap;margin:-8px 0 20px;}
+  .grid-bingo-controls.show{display:flex;}
+  .grid-bingo-controls button{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:8px;padding:8px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;}
+  .grid-bingo-controls button:hover{border-color:var(--mark);color:var(--ink);}
+  .grid-bingo-controls .primary{background:var(--mark);border-color:var(--mark);color:#12060f;font-weight:700;}
+  .grid-bingo-config{display:none;background:var(--panel);border:1px solid var(--panel-line);border-radius:10px;padding:12px;margin:-8px 0 20px;}
+  .grid-bingo-config.show{display:grid;gap:12px;}
+  .bingo-config-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .bingo-config-row label{font-size:12px;color:var(--dim);min-width:88px;}
+  .bingo-options{display:flex;gap:4px;flex-wrap:wrap;}
+  .bingo-options button{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:6px;padding:6px 9px;font-size:12px;cursor:pointer;font-family:inherit;}
+  .bingo-options button:hover,.bingo-options button.on{background:var(--panel-line);color:var(--ink);}
+  .bingo-config-actions{display:flex;justify-content:flex-end;gap:8px;}
+  .grid-bingo-status{display:none;background:var(--panel);border:1px solid var(--panel-line);border-left:3px solid var(--secondary);border-radius:9px;padding:10px 14px;margin:-8px 0 16px;color:var(--dim);font-size:13px;}
+  .grid-bingo-status.show{display:block;}
+  .grid-bingo-status strong{color:var(--ink);}
+  .bingo-leaderboard{display:none;margin:-4px 0 24px;}
+  .bingo-leaderboard.show{display:grid;gap:7px;}
+  .bingo-leaderboard .player{padding:9px 12px;}
+  .bingo-leaderboard .player .top{padding-right:0;}
+  .bingo-leaderboard .bingo-score{font-size:12px;color:var(--dim);margin-top:5px;}
+  .bingo-leaderboard .winner{border-color:var(--mark);}
 
   .category{margin-bottom:34px;}
   .cat-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;}
@@ -146,6 +168,7 @@
   .tile-sizes button:focus-visible{outline:2px solid var(--mark);outline-offset:1px;}
 
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--tile-min),1fr));gap:10px;}
+  .grid.bingo-grid{grid-template-columns:repeat(var(--bingo-size),minmax(0,1fr));}
   .tile{
     position:relative;aspect-ratio:1/1;background:var(--panel);border:1px solid var(--panel-line);
     border-radius:10px;display:flex;align-items:center;justify-content:center;
@@ -266,6 +289,20 @@
       <button id="leaveRoomBtn" class="leave-room" type="button">Leave Room</button>
     </div>
   </div>
+
+  <div class="grid-bingo-controls" id="gridBingoControls">
+    <button id="startGridBingoBtn" class="primary" type="button">Start Grid Bingo</button>
+    <button id="newGridBingoBtn" type="button">New Round</button>
+    <button id="endGridBingoBtn" type="button">End Round</button>
+  </div>
+  <div class="grid-bingo-config" id="gridBingoConfig">
+    <div class="bingo-config-row"><label>Grid size</label><div class="bingo-options" id="gridSizeOptions"></div></div>
+    <div class="bingo-config-row"><label>Card mode</label><div class="bingo-options" id="cardModeOptions"></div></div>
+    <div class="bingo-config-row"><label>Scoring</label><div class="bingo-options" id="scoringModeOptions"></div></div>
+    <div class="bingo-config-actions"><button id="cancelGridBingoBtn" type="button">Cancel</button><button id="confirmGridBingoBtn" class="primary" type="button">Start Round</button></div>
+  </div>
+  <div class="grid-bingo-status" id="gridBingoStatus"></div>
+  <div class="bingo-leaderboard" id="bingoLeaderboard"></div>
 
   <div id="board"></div>
 
@@ -415,6 +452,122 @@ const Store = {
       return (await res.json()).length > 0;
     }
     try{ return Boolean(await window.storage.get(ROOM_PREFIX + code, true)); }catch(e){ return false; }
+  },
+  async getActiveRound(roomCode){
+    if(!roomCode) return null;
+    if(useRemote()){
+      const res = await fetch(`${REMOTE.url}/rest/v1/rounds?room_code=eq.${encodeURIComponent(roomCode)}&ended_at=is.null&order=created_at.desc&limit=1`, {
+        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key}
+      });
+      if(!res.ok) throw new Error("round lookup failed " + res.status);
+      const rows = await res.json();
+      return rows[0] || null;
+    }
+    try{
+      const r = await window.storage.get(ROOM_PREFIX + roomCode + ":round", true);
+      const round = r && r.value ? JSON.parse(r.value) : null;
+      return round && !round.ended_at ? round : null;
+    }catch(e){ return null; }
+  },
+  async getRound(roundId){
+    if(!roundId) return null;
+    if(useRemote()){
+      const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&select=*`, {
+        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key}
+      });
+      if(!res.ok) throw new Error("round fetch failed " + res.status);
+      const rows = await res.json();
+      return rows[0] || null;
+    }
+    try{
+      const r = await window.storage.get(ROOM_PREFIX + me.roomCode + ":round", true);
+      return r && r.value ? JSON.parse(r.value) : null;
+    }catch(e){ return null; }
+  },
+  async listRoundEntries(roundId){
+    if(!roundId) return [];
+    if(useRemote()){
+      const res = await fetch(`${REMOTE.url}/rest/v1/round_entries?round_id=eq.${encodeURIComponent(roundId)}&select=*`, {
+        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key}
+      });
+      if(!res.ok) throw new Error("round entries lookup failed " + res.status);
+      return await res.json();
+    }
+    try{
+      const r = await window.storage.get(ROOM_PREFIX + "round-entry:" + roundId, true);
+      return r && r.value ? JSON.parse(r.value) : [];
+    }catch(e){ return []; }
+  },
+  async createRound(round, entries){
+    if(useRemote()){
+      const roundRes = await fetch(`${REMOTE.url}/rest/v1/rounds`, {
+        method:"POST",
+        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json"},
+        body:JSON.stringify([round])
+      });
+      if(!roundRes.ok) throw new Error("round create failed " + roundRes.status);
+      const entryRes = await fetch(`${REMOTE.url}/rest/v1/round_entries`, {
+        method:"POST",
+        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json"},
+        body:JSON.stringify(entries)
+      });
+      if(!entryRes.ok) throw new Error("round entries create failed " + entryRes.status);
+      return;
+    }
+    await window.storage.set(ROOM_PREFIX + round.room_code + ":round", JSON.stringify(round), true);
+    await window.storage.set(ROOM_PREFIX + "round-entry:" + round.id, JSON.stringify(entries), true);
+  },
+  async addRoundEntry(entry){
+    if(useRemote()){
+      const res = await fetch(`${REMOTE.url}/rest/v1/round_entries`, {
+        method:"POST",
+        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates"},
+        body:JSON.stringify([entry])
+      });
+      if(!res.ok) throw new Error("round entry create failed " + res.status);
+      return;
+    }
+    const entries = await this.listRoundEntries(entry.round_id);
+    if(!entries.some(x => x.player_id === entry.player_id)) entries.push(entry);
+    await window.storage.set(ROOM_PREFIX + "round-entry:" + entry.round_id, JSON.stringify(entries), true);
+  },
+  async saveRoundEntry(entry){
+    if(useRemote()){
+      const res = await fetch(`${REMOTE.url}/rest/v1/round_entries?round_id=eq.${encodeURIComponent(entry.round_id)}&player_id=eq.${encodeURIComponent(entry.player_id)}`, {
+        method:"PATCH",
+        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=minimal"},
+        body:JSON.stringify({marks:entry.marks, lines_completed:entry.lines_completed, points:entry.points, finished_at:entry.finished_at || null})
+      });
+      if(!res.ok) throw new Error("round entry save failed " + res.status);
+      return;
+    }
+    const entries = await this.listRoundEntries(entry.round_id);
+    const index = entries.findIndex(x => x.player_id === entry.player_id);
+    if(index >= 0) entries[index] = entry;
+    await window.storage.set(ROOM_PREFIX + "round-entry:" + entry.round_id, JSON.stringify(entries), true);
+  },
+  async claimRound(roundId, playerId){
+    if(!useRemote()) return false;
+    const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&winner_id=is.null`, {
+      method:"PATCH",
+      headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=representation"},
+      body:JSON.stringify({winner_id:playerId, ended_at:Date.now()})
+    });
+    if(!res.ok) throw new Error("winner claim failed " + res.status);
+    return (await res.json()).length > 0;
+  },
+  async endRound(roundId){
+    if(useRemote()){
+      const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&ended_at=is.null`, {
+        method:"PATCH",
+        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=minimal"},
+        body:JSON.stringify({ended_at:Date.now()})
+      });
+      if(!res.ok) throw new Error("round end failed " + res.status);
+      return;
+    }
+    const active = await this.getActiveRound(me.roomCode);
+    if(active){ active.ended_at = Date.now(); await window.storage.set(ROOM_PREFIX + me.roomCode + ":round", JSON.stringify(active), true); }
   }
 };
 
@@ -457,6 +610,9 @@ let lastSync = 0;
 let syncOk = false;
 let pollTimer = null;
 let audioContext = null;
+let activeRound = null;
+let roundEntries = [];
+let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race"};
 
 /* ============================ helpers ============================ */
 function escapeHtml(s){
@@ -475,6 +631,37 @@ function myBoard(){
 function shownBoard(){ return boards[viewingId] || myBoard(); }
 function isMine(){ return viewingId === currentBoardId(); }
 function countDone(board){ return ALL.filter(i => board.marks && board.marks[i.key]).length; }
+function playerIdForBoard(id){ return String(id).split("--")[0]; }
+function shuffle(items){
+  const out = items.slice();
+  for(let i = out.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+function makeRoundCard(size, sharedCard){
+  return sharedCard ? sharedCard.slice() : shuffle(ALL.map(item => item.name)).slice(0, size * size);
+}
+function currentRoundEntry(){ return roundEntries.find(entry => entry.player_id === me?.id) || null; }
+function roundLines(card, marks, size){
+  let lines = 0;
+  for(let row = 0; row < size; row++) if(card.slice(row * size, row * size + size).every(name => marks[name])) lines++;
+  for(let column = 0; column < size; column++){
+    let complete = true;
+    for(let row = 0; row < size; row++) if(!marks[card[row * size + column]]) complete = false;
+    if(complete) lines++;
+  }
+  let diagonal = true;
+  for(let i = 0; i < size; i++) if(!marks[card[i * size + i]]) diagonal = false;
+  if(diagonal) lines++;
+  diagonal = true;
+  for(let i = 0; i < size; i++) if(!marks[card[i * size + (size - i - 1)]]) diagonal = false;
+  if(diagonal) lines++;
+  return lines;
+}
+function roundIsClear(card, marks){ return card.every(name => marks[name]); }
+function playerEntryForBoard(id){ return roundEntries.find(entry => entry.player_id === playerIdForBoard(id)); }
 
 /* ============================ sync ============================ */
 async function syncNow(){
@@ -490,6 +677,23 @@ async function syncNow(){
     const gone = viewingId && viewingId !== boardId && !remote[viewingId];
     boards = remote;
     if(gone) viewingId = boardId;
+    const previousRoundId = activeRound?.id || me.activeRoundId || null;
+    activeRound = await Store.getActiveRound(currentRoomCode());
+    if(!activeRound && me.activeRoundId){
+      const finished = await Store.getRound(me.activeRoundId);
+      if(finished && finished.winner_id && Date.now() - Number(finished.ended_at || 0) < 10000) activeRound = finished;
+    }
+    roundEntries = activeRound ? await Store.listRoundEntries(activeRound.id) : [];
+    if(activeRound && !activeRound.ended_at && !roundEntries.some(entry => entry.player_id === me.id)){
+      const card = makeRoundCard(Number(activeRound.grid_size), activeRound.card_mode === "shared" ? activeRound.shared_card : null);
+      await Store.addRoundEntry({round_id:activeRound.id, player_id:me.id, player_name:me.name, card, marks:{}, lines_completed:0, points:0, finished_at:null});
+      roundEntries = await Store.listRoundEntries(activeRound.id);
+    }
+    const nextRoundId = activeRound?.id || null;
+    if(previousRoundId !== nextRoundId && me.activeRoundId !== nextRoundId){
+      me.activeRoundId = nextRoundId;
+      await Store.setMe(me);
+    }
     lastSync = Date.now();
     syncOk = true;
   }catch(e){
@@ -518,7 +722,7 @@ function startPolling(){
     if(document.hidden) return;
     await syncNow();
     renderRoster();
-    if(!isMine()) renderBoard();
+    renderBoard();
   }, POLL_MS);
 }
 function stopPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer = null; }
@@ -608,6 +812,123 @@ function renderRoomBar(){
   document.getElementById("roomCodeLabel").textContent = room || "";
 }
 
+function renderGridBingoControls(){
+  const inRoom = Boolean(currentRoomCode());
+  const hasRound = Boolean(activeRound);
+  document.getElementById("gridBingoControls").classList.toggle("show", inRoom);
+  document.getElementById("startGridBingoBtn").style.display = hasRound ? "none" : "";
+  document.getElementById("newGridBingoBtn").style.display = inRoom && hasRound ? "" : "none";
+  document.getElementById("endGridBingoBtn").style.display = inRoom && hasRound && !activeRound.ended_at ? "" : "none";
+  document.getElementById("gridBingoConfig").classList.toggle("show", inRoom && !hasRound && document.getElementById("gridBingoConfig").dataset.open === "true");
+  if(!inRoom || hasRound) document.getElementById("gridBingoConfig").dataset.open = "false";
+}
+
+function buildBingoOptions(id, options, selected, onChange){
+  const box = document.getElementById(id);
+  box.innerHTML = "";
+  options.forEach(option => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = option.label;
+    button.className = option.value === selected ? "on" : "";
+    button.addEventListener("click", () => onChange(option.value));
+    box.appendChild(button);
+  });
+}
+function buildGridBingoConfig(){
+  buildBingoOptions("gridSizeOptions", [{label:"3x3",value:3},{label:"4x4",value:4},{label:"5x5",value:5}], gridBingoConfig.gridSize, value => { gridBingoConfig.gridSize = value; buildGridBingoConfig(); });
+  buildBingoOptions("cardModeOptions", [{label:"Same card for everyone",value:"shared"},{label:"Everyone gets their own card",value:"individual"}], gridBingoConfig.cardMode, value => { gridBingoConfig.cardMode = value; buildGridBingoConfig(); });
+  buildBingoOptions("scoringModeOptions", [{label:"Race only (first full clear wins)",value:"race"},{label:"Points (lines + bonuses)",value:"points"}], gridBingoConfig.scoringMode, value => { gridBingoConfig.scoringMode = value; buildGridBingoConfig(); });
+}
+
+function makeRoundEntry(playerId, playerName, card, roundId){
+  return {round_id:roundId, player_id:playerId, player_name:playerName, card, marks:{}, lines_completed:0, points:0, finished_at:null};
+}
+
+async function startGridBingo(){
+  const roundId = crypto.randomUUID ? crypto.randomUUID() : "round-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
+  const members = Object.entries(boards);
+  const sharedCard = gridBingoConfig.cardMode === "shared" ? makeRoundCard(gridBingoConfig.gridSize) : null;
+  const round = {
+    id:roundId,
+    room_code:currentRoomCode(),
+    created_at:Date.now(),
+    grid_size:gridBingoConfig.gridSize,
+    card_mode:gridBingoConfig.cardMode,
+    scoring_mode:gridBingoConfig.scoringMode,
+    shared_card:sharedCard,
+    winner_id:null,
+    ended_at:null
+  };
+  const entries = members.map(([id,board]) => {
+    const card = sharedCard ? sharedCard.slice() : makeRoundCard(round.grid_size);
+    return makeRoundEntry(playerIdForBoard(id), board.name, card, roundId);
+  });
+  await Store.createRound(round, entries);
+  await syncNow();
+  renderAll();
+}
+
+async function endGridBingo(){
+  if(!activeRound) return;
+  await Store.endRound(activeRound.id);
+  await syncNow();
+  renderAll();
+}
+
+async function toggleRoundCard(name){
+  const entry = currentRoundEntry();
+  if(!entry || activeRound.ended_at) return;
+  const marks = {...(entry.marks || {})};
+  const marked = !marks[name];
+  marks[name] = marked;
+  const size = Number(activeRound.grid_size);
+  const lines = roundLines(entry.card, marks, size);
+  const full = roundIsClear(entry.card, marks);
+  let points = activeRound.scoring_mode === "points" ? lines * 100 + (full ? 250 : 0) : 0;
+  let finishedAt = entry.finished_at || null;
+  playMarkSound(marked);
+  if(full && !finishedAt){
+    finishedAt = Date.now();
+    if(await Store.claimRound(activeRound.id, me.id)) points += activeRound.scoring_mode === "points" ? 150 : 0;
+  }
+  const next = {...entry, marks, lines_completed:lines, points, finished_at:finishedAt};
+  await Store.saveRoundEntry(next);
+  await syncNow();
+  renderAll();
+}
+
+function renderRoundBoard(){
+  const entry = currentRoundEntry();
+  if(!entry) return;
+  document.getElementById("viewingBanner").classList.remove("show");
+  document.getElementById("resetBtn").style.display = "none";
+  document.getElementById("leaveBtn").style.display = "none";
+  const size = Number(activeRound.grid_size);
+  const leaderboard = document.getElementById("bingoLeaderboard");
+  leaderboard.innerHTML = "";
+  roundEntries.slice().sort((a,b) => (b.points || 0) - (a.points || 0) || (b.lines_completed || 0) - (a.lines_completed || 0)).forEach(item => {
+    const card = document.createElement("div");
+    card.className = "player" + (activeRound.winner_id === item.player_id ? " winner" : "");
+    const score = activeRound.scoring_mode === "points" ? `${item.lines_completed || 0} lines · ${item.points || 0} pts` : `${item.lines_completed || 0} lines`;
+    card.innerHTML = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}</span></div><div class="bingo-score">${score}</div>`;
+    leaderboard.appendChild(card);
+  });
+  leaderboard.classList.add("show");
+  const status = document.getElementById("gridBingoStatus");
+  status.classList.add("show");
+  if(activeRound.winner_id){
+    status.innerHTML = activeRound.winner_id === me.id ? "<strong>You won!</strong>" : `<strong>${escapeHtml((roundEntries.find(item => item.player_id === activeRound.winner_id) || {}).player_name || "A player")} won this round</strong>`;
+  } else {
+    status.textContent = `${size}x${size} ${activeRound.scoring_mode === "points" ? "points" : "race"} round in progress`;
+  }
+  const grid = document.createElement("div");
+  grid.className = "grid bingo-grid";
+  grid.style.setProperty("--bingo-size", size);
+  entry.card.forEach(name => grid.appendChild(makeTile({name,key:name}, {marks:entry.marks || {}}, true, () => toggleRoundCard(name))));
+  document.getElementById("board").replaceChildren(grid);
+}
+
 function roomCodeFromUrl(){
   return new URLSearchParams(location.search).get("room")?.trim().toUpperCase() || "";
 }
@@ -656,7 +977,7 @@ function renderRoster(){
     });
 }
 
-function makeTile(item, board, editable){
+function makeTile(item, board, editable, onToggle){
   const done = !!(board.marks && board.marks[item.key]);
   const tile = document.createElement("button");
   tile.className = "tile" + (done ? " done" : "");
@@ -670,11 +991,17 @@ function makeTile(item, board, editable){
     this.insertAdjacentHTML("afterend", BLANK);
     this.remove();
   };
-  if(editable) tile.addEventListener("click", () => toggle(item.key));
+  if(editable) tile.addEventListener("click", () => (onToggle || toggle)(item.key));
   return tile;
 }
 
 function renderBoard(){
+  if(activeRound && currentRoomCode()){
+    renderRoundBoard();
+    return;
+  }
+  document.getElementById("bingoLeaderboard").classList.remove("show");
+  document.getElementById("gridBingoStatus").classList.remove("show");
   const board = shownBoard();
   const editable = isMine();
   const el = document.getElementById("board");
@@ -720,7 +1047,7 @@ function renderBoard(){
   }
 }
 
-function renderAll(){ renderRoster(); renderBoard(); renderRoomBar(); }
+function renderAll(){ renderRoster(); renderBoard(); renderRoomBar(); renderGridBingoControls(); }
 
 /* ============================ actions ============================ */
 async function toggle(key){
@@ -810,6 +1137,27 @@ document.getElementById("resetBtn").addEventListener("click", async () => {
 });
 document.getElementById("leaveBtn").addEventListener("click", leaveBoard);
 document.getElementById("leaveRoomBtn").addEventListener("click", leaveRoom);
+document.getElementById("startGridBingoBtn").addEventListener("click", () => {
+  document.getElementById("gridBingoConfig").dataset.open = "true";
+  buildGridBingoConfig();
+  renderGridBingoControls();
+});
+document.getElementById("newGridBingoBtn").addEventListener("click", async () => {
+  if(activeRound) await Store.endRound(activeRound.id);
+  await syncNow();
+  document.getElementById("gridBingoConfig").dataset.open = "true";
+  buildGridBingoConfig();
+  renderGridBingoControls();
+});
+document.getElementById("endGridBingoBtn").addEventListener("click", endGridBingo);
+document.getElementById("cancelGridBingoBtn").addEventListener("click", () => {
+  document.getElementById("gridBingoConfig").dataset.open = "false";
+  renderGridBingoControls();
+});
+document.getElementById("confirmGridBingoBtn").addEventListener("click", async () => {
+  document.getElementById("gridBingoConfig").dataset.open = "false";
+  await startGridBingo();
+});
 document.getElementById("muteBtn").addEventListener("click", async () => {
   me.muted = !me.muted;
   renderMuteButton();
