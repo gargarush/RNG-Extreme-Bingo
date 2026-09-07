@@ -123,6 +123,11 @@
     background:var(--mark);border:none;color:#12060f;font-weight:700;
     padding:7px 14px;border-radius:7px;font-size:12.5px;cursor:pointer;font-family:inherit;
   }
+  .context-bar{font-size:12.5px;color:var(--dim);letter-spacing:.02em;margin:-8px 0 14px;}
+  .context-bar strong{color:var(--ink);}
+  .toast-stack{position:fixed;top:16px;right:16px;z-index:40;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:min(280px,80vw);}
+  .toast{background:var(--panel);border:1px solid var(--panel-line);border-left:3px solid var(--mark);border-radius:9px;padding:10px 14px;font-size:13px;color:var(--ink);box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:0;transform:translateY(-6px);transition:opacity .18s ease,transform .18s ease;}
+  .toast.show{opacity:1;transform:translateY(0);}
   .room-bar{display:none;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--panel-line);border-left:3px solid var(--secondary);border-radius:9px;padding:10px 14px;margin:-8px 0 20px;color:var(--dim);font-size:13px;}
   .room-bar.show{display:flex;}
   .room-bar strong{color:var(--ink);font-size:15px;letter-spacing:.12em;}
@@ -160,10 +165,12 @@
   .bingo-leaderboard .winner{border-color:var(--mark);}
   .bingo-leaderboard .vis-icon{width:13px;height:13px;vertical-align:middle;margin-left:6px;color:var(--dim);}
   .bingo-leaderboard .vis-icon.open{color:var(--utility);}
-  .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:800;margin-left:6px;flex-shrink:0;}
-  .rank-badge.rank-1{background:#f4c430;color:#2b1c00;}
-  .rank-badge.rank-2{background:#c8d0da;color:#1a1f24;}
-  .rank-badge.rank-3{background:#b5651d;color:#241205;}
+  .rank-badge{display:inline-flex;vertical-align:middle;margin-left:6px;flex-shrink:0;}
+  .rank-badge svg{display:block;}
+  .rank-badge .num{fill:#221605;}
+  .rank-badge.medal-1 .disc{fill:#f4c430;} .rank-badge.medal-1 .ribbon{fill:#c79a1e;}
+  .rank-badge.medal-2 .disc{fill:#c8d0da;} .rank-badge.medal-2 .ribbon{fill:#98a3ae;}
+  .rank-badge.medal-3 .disc{fill:#b5651d;} .rank-badge.medal-3 .ribbon{fill:#8a4a15;}
 
   .category{margin-bottom:34px;}
   .cat-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;}
@@ -254,6 +261,7 @@
 </style>
 </head>
 <body>
+<div class="toast-stack" id="toastStack"></div>
 <div class="wrap">
 
   <header>
@@ -266,6 +274,8 @@
       <div class="lbl" id="scoreLbl">weapons cleared</div>
     </div>
   </header>
+
+  <div class="context-bar" id="contextBar"></div>
 
   <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
 
@@ -634,6 +644,7 @@ let activeRound = null;
 let roundEntries = [];
 let roundViewingId = null;
 let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisibility:"hidden"};
+let rosterBaseline = null;
 
 /* ============================ helpers ============================ */
 function escapeHtml(s){
@@ -686,7 +697,7 @@ function playerEntryForBoard(id){ return roundEntries.find(entry => entry.player
 function canViewRoundEntry(entry){
   if(!activeRound || !entry) return false;
   if(entry.player_id === me.id) return true;
-  if(activeRound.card_mode !== "individual") return false;
+  if(activeRound.card_mode !== "individual") return true; // shared: identical card, nothing to hide
   if(activeRound.ended_at) return true;
   const visibility = activeRound.card_visibility || "hidden";
   if(visibility === "visible") return true;
@@ -695,6 +706,28 @@ function canViewRoundEntry(entry){
 }
 function tileMaskedFor(entry){
   return activeRound.card_mode === "individual" && !activeRound.ended_at && (activeRound.card_visibility || "hidden") === "finish" && entry.player_id !== me.id;
+}
+function tilesMarkedCount(entry){
+  return Object.values(entry?.marks || {}).filter(Boolean).length;
+}
+function medalBadge(rank){
+  return `<span class="rank-badge medal-${rank}"><svg viewBox="0 0 20 26" width="15" height="19" aria-hidden="true">` +
+    `<polygon class="ribbon" points="6,9 2,24 10,17"/><polygon class="ribbon" points="14,9 18,24 10,17"/>` +
+    `<circle class="disc" cx="10" cy="9" r="8"/>` +
+    `<text class="num" x="10" y="12.3" text-anchor="middle" font-size="9" font-weight="800">${rank}</text>` +
+    `</svg></span>`;
+}
+function showToast(message){
+  const stack = document.getElementById("toastStack");
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = message;
+  stack.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => {
+    el.classList.remove("show");
+    setTimeout(() => el.remove(), 220);
+  }, 2750);
 }
 
 /* ============================ sync ============================ */
@@ -709,6 +742,19 @@ async function syncNow(){
       remote[boardId] = (theirs && theirs.updated > (mine.updated || 0)) ? theirs : mine;
     }
     const gone = viewingId && viewingId !== boardId && !remote[viewingId];
+    if(currentRoomCode()){
+      if(rosterBaseline){
+        Object.keys(remote).forEach(id => {
+          if(id !== boardId && !rosterBaseline.has(id)) showToast(`${remote[id].name} joined the room`);
+        });
+        rosterBaseline.forEach((name, id) => {
+          if(id !== boardId && !remote[id]) showToast(`${name} left the room`);
+        });
+      }
+      rosterBaseline = new Map(Object.entries(remote).map(([id,b]) => [id, b.name]));
+    } else {
+      rosterBaseline = null;
+    }
     boards = remote;
     if(gone) viewingId = boardId;
     const previousRoundId = activeRound?.id || me.activeRoundId || null;
@@ -847,6 +893,21 @@ function renderRoomBar(){
   document.getElementById("roomCodeLabel").textContent = room || "";
 }
 
+function renderContextBar(){
+  const bar = document.getElementById("contextBar");
+  const room = currentRoomCode();
+  if(!room){ bar.innerHTML = "<strong>Free Play</strong>"; return; }
+  if(activeRound && !activeRound.ended_at){
+    const size = Number(activeRound.grid_size);
+    const modeLabel = activeRound.card_mode === "shared" ? "Shared" : "Individual";
+    bar.innerHTML = `<strong>Room ${escapeHtml(room)}</strong> · ${size}x${size} ${modeLabel} round in progress`;
+  } else if(activeRound && activeRound.ended_at){
+    bar.innerHTML = `<strong>Room ${escapeHtml(room)}</strong> · round ended`;
+  } else {
+    bar.innerHTML = `<strong>Room ${escapeHtml(room)}</strong>`;
+  }
+}
+
 function renderGridBingoControls(){
   const inRoom = Boolean(currentRoomCode());
   const hasRound = Boolean(activeRound);
@@ -927,7 +988,8 @@ async function toggleRoundCard(name){
   const size = Number(activeRound.grid_size);
   const lines = roundLines(entry.card, marks, size);
   const full = roundIsClear(entry.card, marks);
-  let points = activeRound.scoring_mode === "points" ? lines * 100 + (full ? 250 : 0) : 0;
+  const tiles = tilesMarkedCount({marks});
+  let points = activeRound.scoring_mode === "points" ? tiles * 10 + lines * 100 + (full ? 250 : 0) : 0;
   let finishedAt = entry.finished_at || null;
   playMarkSound(marked);
   if(full && !finishedAt){
@@ -945,10 +1007,9 @@ const VISIBILITY_LABELS = {hidden:"Hidden", visible:"Fully visible", finish:"Rev
 function renderRoundBoard(){
   const own = currentRoundEntry();
   if(!own) return;
-  const scoped = activeRound.card_mode === "individual";
   const pointsMode = activeRound.scoring_mode === "points";
   const size = Number(activeRound.grid_size);
-  const viewed = (scoped && roundViewingId && roundViewingId !== me.id) ? roundEntries.find(e => e.player_id === roundViewingId) : null;
+  const viewed = (roundViewingId && roundViewingId !== me.id) ? roundEntries.find(e => e.player_id === roundViewingId) : null;
   const entry = (viewed && canViewRoundEntry(viewed)) ? viewed : own;
   const editable = entry.player_id === me.id && !activeRound.ended_at;
   document.getElementById("viewingBanner").classList.toggle("show", entry.player_id !== me.id);
@@ -957,34 +1018,39 @@ function renderRoundBoard(){
   document.getElementById("leaveBtn").style.display = "none";
 
   // While a round is active, the header shows round progress instead of the 43-weapon counter.
-  const ownDone = own.card.filter(name => own.marks && own.marks[name]).length;
+  const ownDone = tilesMarkedCount(own);
   document.getElementById("scoreNum").textContent = `${ownDone} / ${size * size}`;
   document.getElementById("scoreLbl").textContent = "tiles cleared";
   document.getElementById("progressFill").style.width = (ownDone / (size * size) * 100) + "%";
 
   const leaderboard = document.getElementById("bingoLeaderboard");
   leaderboard.innerHTML = "";
+  const scoped = activeRound.card_mode === "individual";
   const sorted = roundEntries.slice().sort((a,b) =>
-    (b.lines_completed || 0) - (a.lines_completed || 0) || (pointsMode ? (b.points || 0) - (a.points || 0) : 0)
+    (b.lines_completed || 0) - (a.lines_completed || 0) ||
+    (tilesMarkedCount(b) - tilesMarkedCount(a)) ||
+    (pointsMode ? (b.points || 0) - (a.points || 0) : 0)
   );
   const ranks = new Map();
   let rank = 0, prevKey = null;
   sorted.forEach((item, i) => {
-    const key = `${item.lines_completed || 0}:${pointsMode ? (item.points || 0) : 0}`;
+    const key = `${item.lines_completed || 0}:${tilesMarkedCount(item)}:${pointsMode ? (item.points || 0) : 0}`;
     if(key !== prevKey){ rank = i + 1; prevKey = key; }
     ranks.set(item.player_id, rank);
   });
   sorted.forEach(item => {
-    const viewable = scoped && canViewRoundEntry(item);
-    const locked = scoped && item.player_id !== me.id && !viewable;
+    const viewable = canViewRoundEntry(item);
+    const locked = item.player_id !== me.id && !viewable;
     const card = document.createElement("div");
-    card.className = "player" + (activeRound.winner_id === item.player_id ? " winner" : "") + (scoped && entry.player_id === item.player_id ? " viewing" : "") + (locked ? " locked" : "");
+    card.className = "player" + (activeRound.winner_id === item.player_id ? " winner" : "") + (entry.player_id === item.player_id ? " viewing" : "") + (locked ? " locked" : "");
     const r = ranks.get(item.player_id);
-    const badge = r <= 3 ? `<span class="rank-badge rank-${r}">${r}</span>` : "";
-    const visIcon = (scoped && item.player_id !== me.id) ? `<span class="vis-icon${viewable ? " open" : ""}" title="${viewable ? "You can view this card" : "Hidden from you"}">${viewable ? EYE_OPEN : EYE_CLOSED}</span>` : "";
+    const badge = r <= 3 ? medalBadge(r) : "";
+    const showIcon = scoped ? item.player_id !== me.id : true;
+    const visIcon = showIcon ? `<span class="vis-icon${viewable ? " open" : ""}" title="${viewable ? "You can view this card" : "Hidden from you"}">${viewable ? EYE_OPEN : EYE_CLOSED}</span>` : "";
+    const tiles = tilesMarkedCount(item);
     const score = pointsMode
-      ? `<span class="pts-main">${item.points || 0} pts</span><span class="lines-sub">${item.lines_completed || 0} lines</span>`
-      : `${item.lines_completed || 0} lines`;
+      ? `<span class="pts-main">${item.points || 0} pts</span><span class="lines-sub">${item.lines_completed || 0} lines · ${tiles} tiles</span>`
+      : `${item.lines_completed || 0} lines · ${tiles} tiles`;
     const inner = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}${badge}${visIcon}</span></div><div class="bingo-score">${score}</div>`;
     if(viewable){
       card.innerHTML = `<button type="button" class="open">${inner}</button>`;
@@ -1143,7 +1209,7 @@ function renderBoard(){
   }
 }
 
-function renderAll(){ renderRoster(); renderBoard(); renderRoomBar(); renderGridBingoControls(); }
+function renderAll(){ renderRoster(); renderBoard(); renderRoomBar(); renderGridBingoControls(); renderContextBar(); }
 
 /* ============================ actions ============================ */
 async function toggle(key){
@@ -1353,6 +1419,7 @@ async function switchToRoom(code){
   me.roomCode = normalized;
   viewingId = currentBoardId();
   boards = {};
+  rosterBaseline = null;
   await Store.setMe(me);
   await syncNow();
   if(!boards[viewingId]) boards[viewingId] = {name:me.name, marks:{}, updated:Date.now(), roomCode:normalized};
