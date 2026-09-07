@@ -8,7 +8,7 @@
   :root{
     --bg:#16101f;--panel:#1e1730;--panel-line:#2f2549;--ink:#ece6f7;--dim:#9c8fb8;
     --primary:#ff9d4d;--secondary:#4dc4ff;--melee:#ff4d6a;--utility:#4dffa6;
-    --mark:#ff2ee0;--mark-soft:rgba(255,46,224,.25);
+    --mark:#ff2ee0;--mark-soft:rgba(255,46,224,.25);--tile-min:112px;--tile-icon:30px;--tile-name:10.5px;
   }
   *{box-sizing:border-box;}
   body{
@@ -130,7 +130,12 @@
   .cat-melee h2{color:var(--melee);}
   .cat-utility h2{color:var(--utility);}
 
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;}
+  .tile-sizes{display:flex;gap:4px;align-items:center;background:var(--panel);border:1px solid var(--panel-line);border-radius:9px;padding:3px;}
+  .tile-sizes button{background:transparent;border:0;color:var(--dim);border-radius:6px;padding:6px 9px;font-size:12px;cursor:pointer;font-family:inherit;}
+  .tile-sizes button:hover,.tile-sizes button.on{background:var(--panel-line);color:var(--ink);}
+  .tile-sizes button:focus-visible{outline:2px solid var(--mark);outline-offset:1px;}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--tile-min),1fr));gap:10px;}
   .tile{
     position:relative;aspect-ratio:1/1;background:var(--panel);border:1px solid var(--panel-line);
     border-radius:10px;display:flex;align-items:center;justify-content:center;
@@ -141,14 +146,18 @@
   .tile:active:not(:disabled){transform:translateY(0);}
   .tile:focus-visible{outline:2px solid var(--mark);outline-offset:2px;}
   .tile:disabled{cursor:default;opacity:.92;}
+  .tile .weapon-image{width:100%;height:100%;object-fit:contain;padding:8px 7px 22px;transition:filter .12s ease;}
   .tile .name{
-    position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:10.5px;
-    color:var(--dim);padding:0 4px;line-height:1.15;
+    position:absolute;bottom:6px;left:0;right:0;text-align:center;
+    color:var(--dim);padding:0 4px;line-height:1.15;font-size:var(--tile-name);
   }
-  .tile svg{width:30px;height:30px;color:var(--panel-line);}
+  .tile svg{width:var(--tile-icon);height:var(--tile-icon);color:var(--panel-line);}
+  .tile .stamp{display:none;position:absolute;inset:0;align-items:center;justify-content:center;pointer-events:none;}
   .tile.done{background:#241531;border-color:var(--mark);box-shadow:0 0 0 1px var(--mark-soft),0 0 20px var(--mark-soft);}
   .tile.done .name{color:var(--ink);}
-  .tile.done svg{color:var(--mark);filter:drop-shadow(0 0 6px var(--mark));}
+  .tile.done .weapon-image{filter:brightness(.72) saturate(.55);}
+  .tile.done .stamp{display:flex;}
+  .tile.done .stamp svg{color:var(--mark);filter:drop-shadow(0 0 6px var(--mark));}
   .tile.done::after{
     content:"";position:absolute;inset:0;border-radius:10px;pointer-events:none;
     background:radial-gradient(circle at 50% 38%,var(--mark-soft),transparent 70%);
@@ -221,6 +230,7 @@
       <button class="clear" id="clearSearch" aria-label="Clear search">×</button>
     </div>
     <div class="swatches" id="swatches"></div>
+    <div class="tile-sizes" id="tileSizes" role="group" aria-label="Tile size"></div>
     <button class="ghost" id="resetBtn">Reset my board</button>
     <button class="ghost danger" id="leaveBtn">Leave board</button>
   </div>
@@ -358,6 +368,11 @@ const ACCENTS = [
   {id:"orange", hex:"#ff8a3d",soft:"rgba(255,138,61,.25)"},
   {id:"violet", hex:"#9b6dff",soft:"rgba(155,109,255,.25)"}
 ];
+const TILE_SIZES = [
+  {id:"small",label:"Small",min:"95px",icon:"25px",name:"9.5px"},
+  {id:"medium",label:"Medium",min:"112px",icon:"30px",name:"10.5px"},
+  {id:"large",label:"Large",min:"160px",icon:"42px",name:"12px"}
+];
 
 const HITMARKER = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M7 7 L13 13"/><path d="M25 7 L19 13"/><path d="M7 25 L13 19"/><path d="M25 25 L19 19"/></svg>';
 const BLANK = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="14" height="14" rx="3"/></svg>';
@@ -380,6 +395,9 @@ let pollTimer = null;
 /* ============================ helpers ============================ */
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function slug(s){
+  return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
 }
 function myBoard(){
   if(!boards[me.id]) boards[me.id] = {name:me.name, marks:{}, updated:Date.now()};
@@ -456,6 +474,32 @@ function buildSwatches(){
   });
 }
 
+function applyTileSize(){
+  const size = TILE_SIZES.find(x => x.id === (me?.tileSize || "medium")) || TILE_SIZES[1];
+  document.documentElement.style.setProperty("--tile-min", size.min);
+  document.documentElement.style.setProperty("--tile-icon", size.icon);
+  document.documentElement.style.setProperty("--tile-name", size.name);
+}
+function buildTileSizes(){
+  const box = document.getElementById("tileSizes");
+  box.innerHTML = "";
+  TILE_SIZES.forEach(size => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = (me?.tileSize || "medium") === size.id ? "on" : "";
+    b.textContent = size.label;
+    b.setAttribute("aria-label", size.label + " tile size");
+    b.setAttribute("aria-pressed", b.classList.contains("on") ? "true" : "false");
+    b.addEventListener("click", async () => {
+      me.tileSize = size.id;
+      applyTileSize();
+      buildTileSizes();
+      await Store.setMe(me);
+    });
+    box.appendChild(b);
+  });
+}
+
 /* ============================ render ============================ */
 function renderRoster(){
   const box = document.getElementById("roster");
@@ -507,7 +551,13 @@ function makeTile(item, board, editable){
   tile.type = "button";
   tile.disabled = !editable;
   tile.setAttribute("aria-pressed", done ? "true" : "false");
-  tile.innerHTML = (done ? HITMARKER : BLANK) + `<span class="name">${escapeHtml(item.name)}</span>`;
+  tile.innerHTML = `<img class="weapon-image" src="weapons/${slug(item.name)}.png" alt="" draggable="false">` +
+    `<span class="stamp">${HITMARKER}</span><span class="name">${escapeHtml(item.name)}</span>`;
+  const image = tile.querySelector(".weapon-image");
+  image.onerror = function(){
+    this.insertAdjacentHTML("afterend", BLANK);
+    this.remove();
+  };
   if(editable) tile.addEventListener("click", () => toggle(item.key));
   return tile;
 }
@@ -657,11 +707,13 @@ async function join(){
   const name = document.getElementById("nameInput").value.trim();
   if(!name){ document.getElementById("nameErr").classList.add("show"); return; }
   const slug = name.toLowerCase().replace(/[^a-z0-9]/g,"") || "player";
-  me = {id: slug + "-" + Math.random().toString(36).slice(2,7), name, accent:"magenta"};
+  me = {id: slug + "-" + Math.random().toString(36).slice(2,7), name, accent:"magenta", tileSize:"medium"};
   viewingId = me.id;
   document.getElementById("nameModal").classList.remove("show");
   applyAccent();
   buildSwatches();
+  applyTileSize();
+  buildTileSizes();
   await Store.setMe(me);
   await syncNow();
   boards[me.id] = {name, marks:{}, updated:Date.now()};
@@ -683,6 +735,8 @@ async function init(){
   viewingId = me.id;
   applyAccent();
   buildSwatches();
+  applyTileSize();
+  buildTileSizes();
   await syncNow();
   if(!boards[me.id]) boards[me.id] = {name:me.name, marks:{}, updated:Date.now()};
   wasComplete = countDone(boards[me.id]) === TOTAL;
