@@ -4,7 +4,7 @@ create table rounds (
   id text primary key,
   room_code text not null,
   created_at bigint not null,
-  grid_size int not null,
+  grid_size int,
   card_mode text not null,
   scoring_mode text not null,
   shared_card jsonb,
@@ -12,7 +12,8 @@ create table rounds (
   ended_at bigint,
   card_visibility text not null default 'hidden',
   started_by text,
-  ended_by text
+  ended_by text,
+  layout text not null default 'square'
 );
 
 alter table rounds enable row level security;

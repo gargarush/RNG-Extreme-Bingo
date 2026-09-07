@@ -172,6 +172,25 @@
   .rank-badge.medal-2 .disc{fill:#c8d0da;} .rank-badge.medal-2 .ribbon{fill:#98a3ae;}
   .rank-badge.medal-3 .disc{fill:#b5651d;} .rank-badge.medal-3 .ribbon{fill:#8a4a15;}
 
+  .grid-bingo-config input{background:#14101f;border:1px solid var(--panel-line);color:var(--ink);padding:8px 10px;border-radius:7px;font-size:13px;font-family:inherit;width:110px;}
+  .grid-bingo-config input:focus{outline:2px solid var(--mark);outline-offset:1px;}
+  .inline-err{color:var(--melee);font-size:12px;display:none;}
+  .inline-err.show{display:block;}
+
+  .room-leaderboard{display:none;margin:-8px 0 20px;background:var(--panel);border:1px solid var(--panel-line);border-radius:10px;padding:14px;}
+  .room-leaderboard.show{display:block;}
+  .room-leaderboard-head h2{margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);}
+  .room-leaderboard-list{display:grid;gap:6px;margin-bottom:10px;}
+  .room-leaderboard-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;background:#1a1526;border-radius:8px;font-size:13px;}
+  .room-leaderboard-row .nm{display:flex;align-items:center;gap:2px;font-weight:600;}
+  .room-leaderboard-row .pts{color:var(--dim);font-variant-numeric:tabular-nums;}
+  .round-history{display:none;margin-top:10px;gap:8px;}
+  .round-history.show{display:grid;}
+  .round-history-item{background:#1a1526;border:1px solid var(--panel-line);border-radius:8px;padding:9px 12px;font-size:12.5px;color:var(--dim);}
+  .round-history-item .settings{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--dim);margin-bottom:5px;}
+  .round-history-item .rows{display:flex;flex-wrap:wrap;gap:10px;}
+  .round-history-item .rows span{color:var(--ink);}
+
   .category{margin-bottom:34px;}
   .cat-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;}
   .cat-head h2{font-size:16px;text-transform:uppercase;letter-spacing:.09em;margin:0;font-weight:700;}
@@ -313,6 +332,25 @@
       <button id="copyRoomLink" type="button">Copy invite link</button>
       <button id="leaveRoomBtn" class="leave-room" type="button">Leave Room</button>
     </div>
+  </div>
+
+  <div class="room-bar" id="joinRoomBar">
+    <span>Free Play — playing solo</span>
+    <div class="room-actions">
+      <button id="openJoinRoomBtn" type="button">Join or create a room</button>
+    </div>
+  </div>
+  <div class="grid-bingo-config" id="joinRoomPanel">
+    <div class="bingo-config-row"><label>Room code</label><input id="inlineRoomInput" type="text" placeholder="ABCD" maxlength="4" autocomplete="off" autocapitalize="characters"></div>
+    <div class="bingo-config-actions"><button id="inlineJoinRoomBtn" type="button">Join Room</button><button id="inlineCreateRoomBtn" class="primary" type="button">Create Room</button></div>
+    <div class="inline-err" id="inlineRoomErr"></div>
+  </div>
+
+  <div class="room-leaderboard" id="roomLeaderboardBox">
+    <div class="room-leaderboard-head"><h2>Room Leaderboard</h2></div>
+    <div class="room-leaderboard-list" id="roomLeaderboardList"></div>
+    <button type="button" class="ghost" id="toggleRoundHistoryBtn">Round history</button>
+    <div class="round-history" id="roundHistoryList"></div>
   </div>
 
   <div class="grid-bingo-controls" id="gridBingoControls">
@@ -595,6 +633,41 @@ const Store = {
     }
     const active = await this.getActiveRound(me.roomCode);
     if(active){ active.ended_at = Date.now(); active.ended_by = actorName; await window.storage.set(ROOM_PREFIX + me.roomCode + ":round", JSON.stringify(active), true); }
+  },
+  async claimWinner(roundId, playerId){
+    // Same atomic winner_id-is-null claim as claimRound, but leaves ended_at untouched —
+    // used for >2-player rounds where claiming first place shouldn't end the round for everyone.
+    if(!useRemote()) return false;
+    const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&winner_id=is.null`, {
+      method:"PATCH",
+      headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=representation"},
+      body:JSON.stringify({winner_id:playerId})
+    });
+    if(!res.ok) throw new Error("winner claim failed " + res.status);
+    return (await res.json()).length > 0;
+  },
+  async listEndedRounds(roomCode){
+    if(!roomCode) return [];
+    if(useRemote()){
+      const res = await fetch(`${REMOTE.url}/rest/v1/rounds?room_code=eq.${encodeURIComponent(roomCode)}&ended_at=not.is.null&order=ended_at.desc`, {
+        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key}
+      });
+      if(!res.ok) throw new Error("round history lookup failed " + res.status);
+      return await res.json();
+    }
+    return []; // local fallback only ever tracks one round at a time — no history to show
+  },
+  async listEntriesForRounds(roundIds){
+    if(!roundIds.length) return [];
+    if(useRemote()){
+      const idList = roundIds.map(id => encodeURIComponent(id)).join(",");
+      const res = await fetch(`${REMOTE.url}/rest/v1/round_entries?round_id=in.(${idList})&select=*`, {
+        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key}
+      });
+      if(!res.ok) throw new Error("round entries batch lookup failed " + res.status);
+      return await res.json();
+    }
+    return [];
   }
 };
 
@@ -645,6 +718,8 @@ let roundEntries = [];
 let roundViewingId = null;
 let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisibility:"hidden"};
 let rosterBaseline = null;
+let roomLeaderboard = [];
+let roundHistory = [];
 
 /* ============================ helpers ============================ */
 function escapeHtml(s){
@@ -674,6 +749,14 @@ function shuffle(items){
 }
 function makeRoundCard(size, sharedCard){
   return sharedCard ? sharedCard.slice() : shuffle(ALL.map(item => item.name)).slice(0, size * size);
+}
+function fullCard(){ return ALL.map(item => item.name); }
+function roundSizeLabel(round){
+  return round.layout === "all" ? "All" : `${round.grid_size}x${round.grid_size}`;
+}
+function roundModeLabel(round, short){
+  const isShared = round.card_mode === "shared";
+  return short ? (isShared ? "Shared" : "Individual") : (isShared ? "Shared card" : "Individual cards");
 }
 function currentRoundEntry(){ return roundEntries.find(entry => entry.player_id === me?.id) || null; }
 function roundLines(card, marks, size){
@@ -767,7 +850,9 @@ async function syncNow(){
     }
     roundEntries = activeRound ? await Store.listRoundEntries(activeRound.id) : [];
     if(activeRound && !activeRound.ended_at && !roundEntries.some(entry => entry.player_id === me.id)){
-      const card = makeRoundCard(Number(activeRound.grid_size), activeRound.card_mode === "shared" ? activeRound.shared_card : null);
+      const card = activeRound.layout === "all"
+        ? fullCard()
+        : makeRoundCard(Number(activeRound.grid_size), activeRound.card_mode === "shared" ? activeRound.shared_card : null);
       await Store.addRoundEntry({round_id:activeRound.id, player_id:me.id, player_name:me.name, card, marks:{}, lines_completed:0, points:0, finished_at:null});
       roundEntries = await Store.listRoundEntries(activeRound.id);
     }
@@ -775,22 +860,60 @@ async function syncNow(){
     // Round start/end toasts — same "previous vs current" diff shape as the roster join/leave
     // toasts above, gated behind the same hadRosterBaseline flag so a fresh join/reload doesn't
     // misreport an already-running or already-ended round as just having started/ended.
-    if(currentRoomCode() && hadRosterBaseline){
-      const startedTransition = previousRoundId !== nextRoundId && activeRound && !activeRound.ended_at;
-      if(startedTransition && activeRound.started_by && activeRound.started_by !== me.name){
-        const modeLabel = activeRound.card_mode === "shared" ? "Shared" : "Individual";
-        showToast(`${activeRound.started_by} started a ${activeRound.grid_size}x${activeRound.grid_size} ${modeLabel} round`);
-      }
-      const sameRound = previousRoundId === nextRoundId && Boolean(nextRoundId);
-      const endedTransition = sameRound && previousRound && !previousRound.ended_at && activeRound && activeRound.ended_at;
-      if(endedTransition && activeRound.ended_by && activeRound.ended_by !== me.name){
-        showToast(activeRound.winner_id ? `${activeRound.ended_by} won the round!` : `${activeRound.ended_by} ended the round`);
+    if(currentRoomCode()){
+      if(!hadRosterBaseline){
+        // First sync since joining this room: don't misreport background history as "just
+        // happened", but if a round is already running, tell this player they joined it —
+        // exactly once, since hadRosterBaseline is true on every sync after this one.
+        if(activeRound && !activeRound.ended_at){
+          showToast(`You joined a running ${roundSizeLabel(activeRound)} ${roundModeLabel(activeRound, true)} round`);
+        }
+      } else {
+        const startedTransition = previousRoundId !== nextRoundId && activeRound && !activeRound.ended_at;
+        if(startedTransition && activeRound.started_by && activeRound.started_by !== me.name){
+          showToast(`${activeRound.started_by} started a ${roundSizeLabel(activeRound)} ${roundModeLabel(activeRound, true)} round`);
+        }
+        const sameRound = previousRoundId === nextRoundId && Boolean(nextRoundId);
+        const endedTransition = sameRound && previousRound && !previousRound.ended_at && activeRound && activeRound.ended_at;
+        if(endedTransition && activeRound.ended_by && activeRound.ended_by !== me.name){
+          showToast(activeRound.winner_id ? `${activeRound.ended_by} won the round!` : `${activeRound.ended_by} ended the round`);
+        }
       }
     }
     if(previousRoundId !== nextRoundId) roundViewingId = null;
     if(previousRoundId !== nextRoundId && me.activeRoundId !== nextRoundId){
       me.activeRoundId = nextRoundId;
       await Store.setMe(me);
+    }
+    if(currentRoomCode()){
+      const endedRounds = await Store.listEndedRounds(currentRoomCode());
+      if(endedRounds.length === 0){
+        roomLeaderboard = [];
+        roundHistory = [];
+      } else {
+        const entries = await Store.listEntriesForRounds(endedRounds.map(r => r.id));
+        const entriesByRound = new Map();
+        entries.forEach(e => {
+          if(!entriesByRound.has(e.round_id)) entriesByRound.set(e.round_id, []);
+          entriesByRound.get(e.round_id).push(e);
+        });
+        const roundsAsc = endedRounds.slice().sort((a,b) => (a.ended_at || 0) - (b.ended_at || 0));
+        const totals = new Map();
+        roundsAsc.forEach(r => {
+          (entriesByRound.get(r.id) || []).forEach(e => {
+            const cur = totals.get(e.player_id) || {name:e.player_name, points:0};
+            cur.points += e.points || 0;
+            cur.name = e.player_name; // most-recently-seen name wins, rounds processed oldest first
+            totals.set(e.player_id, cur);
+          });
+        });
+        roomLeaderboard = Array.from(totals, ([player_id, v]) => ({player_id, player_name:v.name, points:v.points}))
+          .sort((a,b) => b.points - a.points);
+        roundHistory = endedRounds.map(r => ({round:r, entries:entriesByRound.get(r.id) || []})); // already newest-first
+      }
+    } else {
+      roomLeaderboard = [];
+      roundHistory = [];
     }
     lastSync = Date.now();
     syncOk = true;
@@ -910,14 +1033,62 @@ function renderRoomBar(){
   document.getElementById("roomCodeLabel").textContent = room || "";
 }
 
+function renderJoinRoomBar(){
+  const show = !currentRoomCode();
+  document.getElementById("joinRoomBar").classList.toggle("show", show);
+  const panel = document.getElementById("joinRoomPanel");
+  panel.classList.toggle("show", show && panel.dataset.open === "true");
+  if(!show) panel.dataset.open = "false";
+}
+
+function renderRoomLeaderboard(){
+  const box = document.getElementById("roomLeaderboardBox");
+  const inRoom = Boolean(currentRoomCode());
+  box.classList.toggle("show", inRoom);
+  if(!inRoom) return;
+  const list = document.getElementById("roomLeaderboardList");
+  if(roomLeaderboard.length === 0){
+    list.innerHTML = '<div class="empty" style="padding:16px;">No completed rounds yet.</div>';
+  } else {
+    list.innerHTML = "";
+    roomLeaderboard.forEach((row, i) => {
+      const rank = i + 1;
+      const el = document.createElement("div");
+      el.className = "room-leaderboard-row";
+      el.innerHTML = `<span class="nm">${escapeHtml(row.player_name)}${rank <= 3 ? medalBadge(rank) : ""}</span><span class="pts">${row.points} pts</span>`;
+      list.appendChild(el);
+    });
+  }
+  const historyBox = document.getElementById("roundHistoryList");
+  historyBox.classList.toggle("show", historyBox.dataset.open === "true");
+  if(roundHistory.length === 0){
+    historyBox.innerHTML = '<div class="empty" style="padding:12px;">No rounds played yet.</div>';
+  } else {
+    historyBox.innerHTML = "";
+    roundHistory.forEach(({round, entries}) => {
+      const item = document.createElement("div");
+      item.className = "round-history-item";
+      let body;
+      if(round.scoring_mode === "points"){
+        const parts = entries.slice().sort((a,b) => (b.points || 0) - (a.points || 0))
+          .map(e => `<span>${escapeHtml(e.player_name)}: ${e.points || 0} pts</span>`);
+        body = `<div class="rows">${parts.join("")}</div>`;
+      } else {
+        const winner = entries.find(e => e.player_id === round.winner_id);
+        body = `<div class="rows"><span>${winner ? escapeHtml(winner.player_name) + " won" : "No winner"}</span></div>`;
+      }
+      item.innerHTML = `<div class="settings">${escapeHtml(roundSettingsLine(round))}</div>${body}`;
+      historyBox.appendChild(item);
+    });
+  }
+}
+
 function renderContextBar(){
   const bar = document.getElementById("contextBar");
   const room = currentRoomCode();
   if(!room){ bar.innerHTML = "<strong>Free Play</strong>"; return; }
   if(activeRound && !activeRound.ended_at){
-    const size = Number(activeRound.grid_size);
-    const modeLabel = activeRound.card_mode === "shared" ? "Shared" : "Individual";
-    bar.innerHTML = `<strong>Room ${escapeHtml(room)}</strong> · ${size}x${size} ${modeLabel} round in progress`;
+    bar.innerHTML = `<strong>Room ${escapeHtml(room)}</strong> · ${roundSizeLabel(activeRound)} ${roundModeLabel(activeRound, true)} round in progress`;
   } else if(activeRound && activeRound.ended_at){
     bar.innerHTML = `<strong>Room ${escapeHtml(room)}</strong> · round ended`;
   } else {
@@ -951,7 +1122,7 @@ function buildBingoOptions(id, options, selected, onChange){
   });
 }
 function buildGridBingoConfig(){
-  buildBingoOptions("gridSizeOptions", [{label:"3x3",value:3},{label:"4x4",value:4},{label:"5x5",value:5}], gridBingoConfig.gridSize, value => { gridBingoConfig.gridSize = value; buildGridBingoConfig(); });
+  buildBingoOptions("gridSizeOptions", [{label:"3x3",value:3},{label:"4x4",value:4},{label:"5x5",value:5},{label:"All",value:"all"}], gridBingoConfig.gridSize, value => { gridBingoConfig.gridSize = value; buildGridBingoConfig(); });
   buildBingoOptions("cardModeOptions", [{label:"Same card for everyone",value:"shared"},{label:"Everyone gets their own card",value:"individual"}], gridBingoConfig.cardMode, value => { gridBingoConfig.cardMode = value; buildGridBingoConfig(); });
   document.getElementById("cardVisibilityRow").style.display = gridBingoConfig.cardMode === "individual" ? "" : "none";
   if(gridBingoConfig.cardMode === "individual"){
@@ -967,12 +1138,14 @@ function makeRoundEntry(playerId, playerName, card, roundId){
 async function startGridBingo(){
   const roundId = crypto.randomUUID ? crypto.randomUUID() : "round-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
   const members = Object.entries(boards);
-  const sharedCard = gridBingoConfig.cardMode === "shared" ? makeRoundCard(gridBingoConfig.gridSize) : null;
+  const isAll = gridBingoConfig.gridSize === "all";
+  const sharedCard = gridBingoConfig.cardMode === "shared" ? (isAll ? fullCard() : makeRoundCard(gridBingoConfig.gridSize)) : null;
   const round = {
     id:roundId,
     room_code:currentRoomCode(),
     created_at:Date.now(),
-    grid_size:gridBingoConfig.gridSize,
+    grid_size:isAll ? null : gridBingoConfig.gridSize,
+    layout:isAll ? "all" : "square",
     card_mode:gridBingoConfig.cardMode,
     scoring_mode:gridBingoConfig.scoringMode,
     card_visibility:gridBingoConfig.cardMode === "individual" ? gridBingoConfig.cardVisibility : "hidden",
@@ -983,7 +1156,7 @@ async function startGridBingo(){
     ended_by:null
   };
   const entries = members.map(([id,board]) => {
-    const card = sharedCard ? sharedCard.slice() : makeRoundCard(round.grid_size);
+    const card = sharedCard ? sharedCard.slice() : (isAll ? fullCard() : makeRoundCard(round.grid_size));
     return makeRoundEntry(playerIdForBoard(id), board.name, card, roundId);
   });
   await Store.createRound(round, entries);
@@ -1004,29 +1177,65 @@ async function toggleRoundCard(name){
   const marks = {...(entry.marks || {})};
   const marked = !marks[name];
   marks[name] = marked;
+  const isAll = activeRound.layout === "all";
   const size = Number(activeRound.grid_size);
-  const lines = roundLines(entry.card, marks, size);
+  const lines = isAll ? 0 : roundLines(entry.card, marks, size); // no line concept for the 43-item "All" layout
   const full = roundIsClear(entry.card, marks);
   const tiles = tilesMarkedCount({marks});
   let points = activeRound.scoring_mode === "points" ? tiles * 10 + lines * 100 + (full ? 250 : 0) : 0;
   let finishedAt = entry.finished_at || null;
   playMarkSound(marked);
+  let shouldEndNow = false;
   if(full && !finishedAt){
     finishedAt = Date.now();
-    if(await Store.claimRound(activeRound.id, me.id, me.name)) points += activeRound.scoring_mode === "points" ? 150 : 0;
+    const totalEntries = roundEntries.length;
+    if(totalEntries <= 2){
+      // 2-or-fewer-player rounds keep today's behavior: first finish ends the round immediately,
+      // but with no one left to "beat", the +150 first-finish bonus doesn't apply.
+      await Store.claimRound(activeRound.id, me.id, me.name);
+    } else {
+      if(await Store.claimWinner(activeRound.id, me.id)) points += activeRound.scoring_mode === "points" ? 150 : 0;
+      const finishedElsewhere = roundEntries.filter(e => e.player_id !== me.id && e.finished_at).length;
+      if(finishedElsewhere + 1 >= totalEntries - 1) shouldEndNow = true;
+    }
   }
   const next = {...entry, marks, lines_completed:lines, points, finished_at:finishedAt};
   await Store.saveRoundEntry(next);
+  if(shouldEndNow) await Store.endRound(activeRound.id, me.name);
   await syncNow();
   renderAll();
 }
 
 const VISIBILITY_LABELS = {hidden:"Hidden", visible:"Fully visible", finish:"Reveal as they mark"};
+function roundSettingsLine(round){
+  const visibilityLabel = round.card_mode === "individual" ? VISIBILITY_LABELS[round.card_visibility || "hidden"] : null;
+  const scoringLabel = round.scoring_mode === "points" ? "Points" : "Race";
+  return [roundSizeLabel(round), roundModeLabel(round, false), visibilityLabel, scoringLabel].filter(Boolean).join(" · ");
+}
+function renderCategorySections(container, marksSource, editable, onToggle, masked){
+  container.innerHTML = "";
+  Object.keys(DATA).forEach(cat => {
+    const items = ALL.filter(i => i.cat === cat);
+    const section = document.createElement("div");
+    section.className = "category";
+    const catDone = items.filter(i => marksSource && marksSource[i.name]).length;
+    const head = document.createElement("div");
+    head.className = "cat-head cat-" + cat.toLowerCase();
+    head.innerHTML = `<h2>${cat}</h2><div class="cat-bar"></div><div class="count">${catDone} / ${items.length}</div>`;
+    section.appendChild(head);
+    const grid = document.createElement("div");
+    grid.className = "grid";
+    items.forEach(i => grid.appendChild(makeTile({name:i.name, key:i.name}, {marks:marksSource || {}}, editable, editable ? () => onToggle(i.name) : undefined, masked)));
+    section.appendChild(grid);
+    container.appendChild(section);
+  });
+}
 
 function renderRoundBoard(){
   const own = currentRoundEntry();
   if(!own) return;
   const pointsMode = activeRound.scoring_mode === "points";
+  const isAll = activeRound.layout === "all";
   const size = Number(activeRound.grid_size);
   const viewed = (roundViewingId && roundViewingId !== me.id) ? roundEntries.find(e => e.player_id === roundViewingId) : null;
   const entry = (viewed && canViewRoundEntry(viewed)) ? viewed : own;
@@ -1045,9 +1254,10 @@ function renderRoundBoard(){
     document.getElementById("progressFill").style.width = (doneFP / TOTAL * 100) + "%";
   } else {
     const ownDone = tilesMarkedCount(own);
-    document.getElementById("scoreNum").textContent = `${ownDone} / ${size * size}`;
+    const ownTotal = own.card.length; // size*size for square rounds, 43 for "All" — works either way
+    document.getElementById("scoreNum").textContent = `${ownDone} / ${ownTotal}`;
     document.getElementById("scoreLbl").textContent = "tiles cleared";
-    document.getElementById("progressFill").style.width = (ownDone / (size * size) * 100) + "%";
+    document.getElementById("progressFill").style.width = (ownDone / ownTotal * 100) + "%";
   }
 
   const leaderboard = document.getElementById("bingoLeaderboard");
@@ -1075,9 +1285,10 @@ function renderRoundBoard(){
     const showIcon = scoped ? item.player_id !== me.id : true;
     const visIcon = showIcon ? `<span class="vis-icon${viewable ? " open" : ""}" title="${viewable ? "You can view this card" : "Hidden from you"}">${viewable ? EYE_OPEN : EYE_CLOSED}</span>` : "";
     const tiles = tilesMarkedCount(item);
+    const progressText = isAll ? `${tiles} tiles` : `${item.lines_completed || 0} lines · ${tiles} tiles`;
     const score = pointsMode
-      ? `<span class="pts-main">${item.points || 0} pts</span><span class="lines-sub">${item.lines_completed || 0} lines · ${tiles} tiles</span>`
-      : `${item.lines_completed || 0} lines · ${tiles} tiles`;
+      ? `<span class="pts-main">${item.points || 0} pts</span><span class="lines-sub">${progressText}</span>`
+      : progressText;
     const inner = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}${badge}${visIcon}</span></div><div class="bingo-score">${score}</div>`;
     if(viewable){
       card.innerHTML = `<button type="button" class="open">${inner}</button>`;
@@ -1091,9 +1302,7 @@ function renderRoundBoard(){
 
   const status = document.getElementById("gridBingoStatus");
   status.classList.add("show");
-  const modeLabel = activeRound.card_mode === "shared" ? "Shared card" : "Individual cards";
-  const visibilityLabel = activeRound.card_mode === "individual" ? VISIBILITY_LABELS[activeRound.card_visibility || "hidden"] : null;
-  const settingsLine = [`${size}x${size}`, modeLabel, visibilityLabel, pointsMode ? "Points" : "Race"].filter(Boolean).join(" · ");
+  const settingsLine = roundSettingsLine(activeRound);
   let resultLine;
   if(activeRound.winner_id){
     resultLine = activeRound.winner_id === me.id ? "<strong>You won!</strong>" : `<strong>${escapeHtml((roundEntries.find(item => item.player_id === activeRound.winner_id) || {}).player_name || "A player")} won this round</strong>`;
@@ -1105,11 +1314,17 @@ function renderRoundBoard(){
   status.innerHTML = `<div class="settings-line">${escapeHtml(settingsLine)}</div><div>${resultLine}</div>`;
 
   const masked = tileMaskedFor(entry);
-  const grid = document.createElement("div");
-  grid.className = "grid bingo-grid";
-  grid.style.setProperty("--bingo-size", size);
-  entry.card.forEach(name => grid.appendChild(makeTile({name,key:name}, {marks:entry.marks || {}}, editable, editable ? () => toggleRoundCard(name) : undefined, masked)));
-  document.getElementById("board").replaceChildren(grid);
+  if(isAll){
+    const container = document.createElement("div");
+    renderCategorySections(container, entry.marks || {}, editable, toggleRoundCard, masked);
+    document.getElementById("board").replaceChildren(container);
+  } else {
+    const grid = document.createElement("div");
+    grid.className = "grid bingo-grid";
+    grid.style.setProperty("--bingo-size", size);
+    entry.card.forEach(name => grid.appendChild(makeTile({name,key:name}, {marks:entry.marks || {}}, editable, editable ? () => toggleRoundCard(name) : undefined, masked)));
+    document.getElementById("board").replaceChildren(grid);
+  }
 }
 
 function roomCodeFromUrl(){
@@ -1236,7 +1451,7 @@ function renderBoard(){
   }
 }
 
-function renderAll(){ renderRoster(); renderBoard(); renderRoomBar(); renderGridBingoControls(); renderContextBar(); }
+function renderAll(){ renderRoster(); renderBoard(); renderRoomBar(); renderJoinRoomBar(); renderGridBingoControls(); renderContextBar(); renderRoomLeaderboard(); }
 
 /* ============================ actions ============================ */
 async function toggle(key){
@@ -1386,6 +1601,30 @@ document.getElementById("copyRoomLink").addEventListener("click", async e => {
   }catch(err){ console.error("copy failed", err); }
 });
 document.getElementById("backToMine").addEventListener("click", () => { viewingId = currentBoardId(); roundViewingId = null; renderAll(); });
+document.getElementById("openJoinRoomBtn").addEventListener("click", () => {
+  const panel = document.getElementById("joinRoomPanel");
+  panel.dataset.open = panel.dataset.open === "true" ? "false" : "true";
+  document.getElementById("inlineRoomErr").classList.remove("show");
+  renderJoinRoomBar();
+  if(panel.dataset.open === "true") document.getElementById("inlineRoomInput").focus();
+});
+document.getElementById("inlineRoomInput").addEventListener("input", e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""); });
+document.getElementById("inlineJoinRoomBtn").addEventListener("click", async () => {
+  document.getElementById("inlineRoomErr").classList.remove("show");
+  const ok = await switchToRoom(document.getElementById("inlineRoomInput").value, "inlineRoomErr");
+  if(ok) document.getElementById("joinRoomPanel").dataset.open = "false";
+});
+document.getElementById("inlineCreateRoomBtn").addEventListener("click", async () => {
+  document.getElementById("inlineRoomErr").classList.remove("show");
+  const ok = await createRoomFlow();
+  if(ok) document.getElementById("joinRoomPanel").dataset.open = "false";
+  else setJoinError("Couldn't create a room. Try again.", "inlineRoomErr");
+});
+document.getElementById("toggleRoundHistoryBtn").addEventListener("click", () => {
+  const box = document.getElementById("roundHistoryList");
+  box.dataset.open = box.dataset.open === "true" ? "false" : "true";
+  renderRoomLeaderboard();
+});
 document.getElementById("winClose").addEventListener("click", () => {
   document.getElementById("winOverlay").classList.remove("show");
 });
@@ -1414,8 +1653,9 @@ document.getElementById("createRoomBtn").addEventListener("click", () => createR
 document.getElementById("nameInput").addEventListener("keydown", e => { if(e.key === "Enter") startSession(null); });
 document.getElementById("roomInput").addEventListener("input", e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""); });
 
-function setJoinError(message){
-  const error = document.getElementById("nameErr");
+function setJoinError(message, targetId){
+  const error = document.getElementById(targetId || "nameErr");
+  if(!error) return;
   error.textContent = message;
   error.classList.add("show");
 }
@@ -1440,10 +1680,10 @@ async function startSession(roomCode){
   startPolling();
 }
 
-async function switchToRoom(code){
+async function switchToRoom(code, errorTarget){
   const normalized = String(code || "").trim().toUpperCase();
-  if(!/^[A-Z0-9]{4}$/.test(normalized)){ setJoinError("Room codes are 4 letters or numbers."); return false; }
-  if(!(await Store.hasRoom(normalized))){ setJoinError("That room does not exist."); return false; }
+  if(!/^[A-Z0-9]{4}$/.test(normalized)){ setJoinError("Room codes are 4 letters or numbers.", errorTarget); return false; }
+  if(!(await Store.hasRoom(normalized))){ setJoinError("That room does not exist.", errorTarget); return false; }
   me.roomCode = normalized;
   viewingId = currentBoardId();
   boards = {};
@@ -1465,19 +1705,28 @@ async function joinRoomFromModal(){
   await startSession(code);
 }
 
-async function createRoomFromModal(){
-  if(!document.getElementById("nameInput").value.trim()){ setJoinError("Enter a name to join."); return; }
+// Shared by the name-entry modal (brand-new identity) and the inline Free Play
+// "Join or create a room" control (existing identity) — generates a room code and
+// either starts a fresh session in it or switches the current identity into it.
+async function createRoomFlow(){
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   for(let attempt = 0; attempt < 5; attempt++){
     const code = Array.from({length:4}, () => alphabet[Math.floor(Math.random()*alphabet.length)]).join("");
     try{
       await Store.createRoom(code);
-      await startSession(code);
-      return;
+      if(me) await switchToRoom(code); else await startSession(code);
+      return true;
     }catch(e){
-      if(attempt === 4) setJoinError("Couldn't create a room. Try again.");
+      if(attempt === 4) return false;
     }
   }
+  return false;
+}
+
+async function createRoomFromModal(){
+  if(!document.getElementById("nameInput").value.trim()){ setJoinError("Enter a name to join."); return; }
+  const ok = await createRoomFlow();
+  if(!ok) setJoinError("Couldn't create a room. Try again.");
 }
 
 /* ============================ init ============================ */
