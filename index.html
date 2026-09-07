@@ -133,7 +133,8 @@
   .grid-bingo-controls.show{display:flex;}
   .grid-bingo-controls button{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:8px;padding:8px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;}
   .grid-bingo-controls button:hover{border-color:var(--mark);color:var(--ink);}
-  .grid-bingo-controls .primary{background:var(--mark);border-color:var(--mark);color:#12060f;font-weight:700;}
+  .grid-bingo-controls .primary,.bingo-config-actions .primary{background:var(--mark);border-color:var(--mark);color:#12060f;font-weight:700;}
+  .grid-bingo-controls .primary:hover,.bingo-config-actions .primary:hover{filter:brightness(1.08);}
   .grid-bingo-config{display:none;background:var(--panel);border:1px solid var(--panel-line);border-radius:10px;padding:12px;margin:-8px 0 20px;}
   .grid-bingo-config.show{display:grid;gap:12px;}
   .bingo-config-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
@@ -142,15 +143,27 @@
   .bingo-options button{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:6px;padding:6px 9px;font-size:12px;cursor:pointer;font-family:inherit;}
   .bingo-options button:hover,.bingo-options button.on{background:var(--panel-line);color:var(--ink);}
   .bingo-config-actions{display:flex;justify-content:flex-end;gap:8px;}
+  .bingo-config-actions button{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:8px;padding:8px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;}
+  .bingo-config-actions button:hover{border-color:var(--mark);color:var(--ink);}
   .grid-bingo-status{display:none;background:var(--panel);border:1px solid var(--panel-line);border-left:3px solid var(--secondary);border-radius:9px;padding:10px 14px;margin:-8px 0 16px;color:var(--dim);font-size:13px;}
   .grid-bingo-status.show{display:block;}
   .grid-bingo-status strong{color:var(--ink);}
+  .grid-bingo-status .settings-line{font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--dim);margin-bottom:4px;}
   .bingo-leaderboard{display:none;margin:-4px 0 24px;}
   .bingo-leaderboard.show{display:grid;gap:7px;}
   .bingo-leaderboard .player{padding:9px 12px;}
+  .bingo-leaderboard .player.locked{opacity:.55;}
   .bingo-leaderboard .player .top{padding-right:0;}
   .bingo-leaderboard .bingo-score{font-size:12px;color:var(--dim);margin-top:5px;}
+  .bingo-leaderboard .bingo-score .pts-main{font-size:15px;font-weight:800;color:var(--ink);}
+  .bingo-leaderboard .bingo-score .lines-sub{font-size:11px;color:var(--dim);margin-left:6px;}
   .bingo-leaderboard .winner{border-color:var(--mark);}
+  .bingo-leaderboard .vis-icon{width:13px;height:13px;vertical-align:middle;margin-left:6px;color:var(--dim);}
+  .bingo-leaderboard .vis-icon.open{color:var(--utility);}
+  .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:800;margin-left:6px;flex-shrink:0;}
+  .rank-badge.rank-1{background:#f4c430;color:#2b1c00;}
+  .rank-badge.rank-2{background:#c8d0da;color:#1a1f24;}
+  .rank-badge.rank-3{background:#b5651d;color:#241205;}
 
   .category{margin-bottom:34px;}
   .cat-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;}
@@ -195,6 +208,8 @@
     content:"";position:absolute;inset:0;border-radius:10px;pointer-events:none;
     background:radial-gradient(circle at 50% 38%,var(--mark-soft),transparent 70%);
   }
+  .tile.masked{border-style:dashed;cursor:default;background:#1a1526;}
+  .tile.masked svg{width:calc(var(--tile-icon) * .8);height:calc(var(--tile-icon) * .8);}
 
   .empty{text-align:center;color:var(--dim);padding:50px 20px;font-size:14.5px;border:1px dashed var(--panel-line);border-radius:12px;}
 
@@ -292,8 +307,9 @@
 
   <div class="grid-bingo-controls" id="gridBingoControls">
     <button id="startGridBingoBtn" class="primary" type="button">Start Grid Bingo</button>
-    <button id="newGridBingoBtn" type="button">New Round</button>
+    <button id="newGridBingoBtn" class="primary" type="button">New Round</button>
     <button id="endGridBingoBtn" type="button">End Round</button>
+    <button id="backToRoomBtn" type="button">Back to Room</button>
   </div>
   <div class="grid-bingo-config" id="gridBingoConfig">
     <div class="bingo-config-row"><label>Grid size</label><div class="bingo-options" id="gridSizeOptions"></div></div>
@@ -595,6 +611,9 @@ const TILE_SIZES = [
 
 const HITMARKER = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M7 7 L13 13"/><path d="M25 7 L19 13"/><path d="M7 25 L13 19"/><path d="M25 25 L19 19"/></svg>';
 const BLANK = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="14" height="14" rx="3"/></svg>';
+const UNKNOWN_TILE = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3" aria-hidden="true"><rect x="6" y="6" width="20" height="20" rx="4"/></svg>';
+const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_CLOSED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/></svg>';
 
 const ALL = Object.entries(DATA).flatMap(([cat,items]) => items.map(w => ({cat,name:w,key:cat+"::"+w})));
 const TOTAL = ALL.length;
@@ -668,10 +687,14 @@ function canViewRoundEntry(entry){
   if(!activeRound || !entry) return false;
   if(entry.player_id === me.id) return true;
   if(activeRound.card_mode !== "individual") return false;
+  if(activeRound.ended_at) return true;
   const visibility = activeRound.card_visibility || "hidden";
   if(visibility === "visible") return true;
-  if(visibility === "finish") return Boolean(entry.finished_at) || Boolean(currentRoundEntry()?.finished_at);
+  if(visibility === "finish") return true;
   return false;
+}
+function tileMaskedFor(entry){
+  return activeRound.card_mode === "individual" && !activeRound.ended_at && (activeRound.card_visibility || "hidden") === "finish" && entry.player_id !== me.id;
 }
 
 /* ============================ sync ============================ */
@@ -692,7 +715,7 @@ async function syncNow(){
     activeRound = await Store.getActiveRound(currentRoomCode());
     if(!activeRound && me.activeRoundId){
       const finished = await Store.getRound(me.activeRoundId);
-      if(finished && finished.winner_id && Date.now() - Number(finished.ended_at || 0) < 10000) activeRound = finished;
+      if(finished && finished.ended_at) activeRound = finished;
     }
     roundEntries = activeRound ? await Store.listRoundEntries(activeRound.id) : [];
     if(activeRound && !activeRound.ended_at && !roundEntries.some(entry => entry.player_id === me.id)){
@@ -827,10 +850,12 @@ function renderRoomBar(){
 function renderGridBingoControls(){
   const inRoom = Boolean(currentRoomCode());
   const hasRound = Boolean(activeRound);
+  const ended = hasRound && Boolean(activeRound.ended_at);
   document.getElementById("gridBingoControls").classList.toggle("show", inRoom);
   document.getElementById("startGridBingoBtn").style.display = hasRound ? "none" : "";
   document.getElementById("newGridBingoBtn").style.display = inRoom && hasRound ? "" : "none";
-  document.getElementById("endGridBingoBtn").style.display = inRoom && hasRound && !activeRound.ended_at ? "" : "none";
+  document.getElementById("endGridBingoBtn").style.display = inRoom && hasRound && !ended ? "" : "none";
+  document.getElementById("backToRoomBtn").style.display = inRoom && ended ? "" : "none";
   document.getElementById("gridBingoConfig").classList.toggle("show", inRoom && !hasRound && document.getElementById("gridBingoConfig").dataset.open === "true");
   if(!inRoom || hasRound) document.getElementById("gridBingoConfig").dataset.open = "false";
 }
@@ -852,7 +877,7 @@ function buildGridBingoConfig(){
   buildBingoOptions("cardModeOptions", [{label:"Same card for everyone",value:"shared"},{label:"Everyone gets their own card",value:"individual"}], gridBingoConfig.cardMode, value => { gridBingoConfig.cardMode = value; buildGridBingoConfig(); });
   document.getElementById("cardVisibilityRow").style.display = gridBingoConfig.cardMode === "individual" ? "" : "none";
   if(gridBingoConfig.cardMode === "individual"){
-    buildBingoOptions("cardVisibilityOptions", [{label:"Hidden",value:"hidden"},{label:"Fully visible",value:"visible"},{label:"Reveal on finish",value:"finish"}], gridBingoConfig.cardVisibility, value => { gridBingoConfig.cardVisibility = value; buildGridBingoConfig(); });
+    buildBingoOptions("cardVisibilityOptions", [{label:"Hidden",value:"hidden"},{label:"Fully visible",value:"visible"},{label:"Reveal as they mark",value:"finish"}], gridBingoConfig.cardVisibility, value => { gridBingoConfig.cardVisibility = value; buildGridBingoConfig(); });
   }
   buildBingoOptions("scoringModeOptions", [{label:"Race only (first full clear wins)",value:"race"},{label:"Points (lines + bonuses)",value:"points"}], gridBingoConfig.scoringMode, value => { gridBingoConfig.scoringMode = value; buildGridBingoConfig(); });
 }
@@ -915,26 +940,52 @@ async function toggleRoundCard(name){
   renderAll();
 }
 
+const VISIBILITY_LABELS = {hidden:"Hidden", visible:"Fully visible", finish:"Reveal as they mark"};
+
 function renderRoundBoard(){
   const own = currentRoundEntry();
   if(!own) return;
   const scoped = activeRound.card_mode === "individual";
+  const pointsMode = activeRound.scoring_mode === "points";
+  const size = Number(activeRound.grid_size);
   const viewed = (scoped && roundViewingId && roundViewingId !== me.id) ? roundEntries.find(e => e.player_id === roundViewingId) : null;
   const entry = (viewed && canViewRoundEntry(viewed)) ? viewed : own;
-  const editable = entry.player_id === me.id;
-  document.getElementById("viewingBanner").classList.toggle("show", !editable);
+  const editable = entry.player_id === me.id && !activeRound.ended_at;
+  document.getElementById("viewingBanner").classList.toggle("show", entry.player_id !== me.id);
   document.getElementById("viewingName").textContent = entry.player_name;
   document.getElementById("resetBtn").style.display = "none";
   document.getElementById("leaveBtn").style.display = "none";
-  const size = Number(activeRound.grid_size);
+
+  // While a round is active, the header shows round progress instead of the 43-weapon counter.
+  const ownDone = own.card.filter(name => own.marks && own.marks[name]).length;
+  document.getElementById("scoreNum").textContent = `${ownDone} / ${size * size}`;
+  document.getElementById("scoreLbl").textContent = "tiles cleared";
+  document.getElementById("progressFill").style.width = (ownDone / (size * size) * 100) + "%";
+
   const leaderboard = document.getElementById("bingoLeaderboard");
   leaderboard.innerHTML = "";
-  roundEntries.slice().sort((a,b) => (b.points || 0) - (a.points || 0) || (b.lines_completed || 0) - (a.lines_completed || 0)).forEach(item => {
+  const sorted = roundEntries.slice().sort((a,b) =>
+    (b.lines_completed || 0) - (a.lines_completed || 0) || (pointsMode ? (b.points || 0) - (a.points || 0) : 0)
+  );
+  const ranks = new Map();
+  let rank = 0, prevKey = null;
+  sorted.forEach((item, i) => {
+    const key = `${item.lines_completed || 0}:${pointsMode ? (item.points || 0) : 0}`;
+    if(key !== prevKey){ rank = i + 1; prevKey = key; }
+    ranks.set(item.player_id, rank);
+  });
+  sorted.forEach(item => {
     const viewable = scoped && canViewRoundEntry(item);
+    const locked = scoped && item.player_id !== me.id && !viewable;
     const card = document.createElement("div");
-    card.className = "player" + (activeRound.winner_id === item.player_id ? " winner" : "") + (scoped && entry.player_id === item.player_id ? " viewing" : "");
-    const score = activeRound.scoring_mode === "points" ? `${item.lines_completed || 0} lines · ${item.points || 0} pts` : `${item.lines_completed || 0} lines`;
-    const inner = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}</span></div><div class="bingo-score">${score}</div>`;
+    card.className = "player" + (activeRound.winner_id === item.player_id ? " winner" : "") + (scoped && entry.player_id === item.player_id ? " viewing" : "") + (locked ? " locked" : "");
+    const r = ranks.get(item.player_id);
+    const badge = r <= 3 ? `<span class="rank-badge rank-${r}">${r}</span>` : "";
+    const visIcon = (scoped && item.player_id !== me.id) ? `<span class="vis-icon${viewable ? " open" : ""}" title="${viewable ? "You can view this card" : "Hidden from you"}">${viewable ? EYE_OPEN : EYE_CLOSED}</span>` : "";
+    const score = pointsMode
+      ? `<span class="pts-main">${item.points || 0} pts</span><span class="lines-sub">${item.lines_completed || 0} lines</span>`
+      : `${item.lines_completed || 0} lines`;
+    const inner = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}${badge}${visIcon}</span></div><div class="bingo-score">${score}</div>`;
     if(viewable){
       card.innerHTML = `<button type="button" class="open">${inner}</button>`;
       card.querySelector(".open").addEventListener("click", () => { roundViewingId = item.player_id === me.id ? null : item.player_id; renderAll(); });
@@ -944,17 +995,27 @@ function renderRoundBoard(){
     leaderboard.appendChild(card);
   });
   leaderboard.classList.add("show");
+
   const status = document.getElementById("gridBingoStatus");
   status.classList.add("show");
+  const modeLabel = activeRound.card_mode === "shared" ? "Shared card" : "Individual cards";
+  const visibilityLabel = activeRound.card_mode === "individual" ? VISIBILITY_LABELS[activeRound.card_visibility || "hidden"] : null;
+  const settingsLine = [`${size}x${size}`, modeLabel, visibilityLabel, pointsMode ? "Points" : "Race"].filter(Boolean).join(" · ");
+  let resultLine;
   if(activeRound.winner_id){
-    status.innerHTML = activeRound.winner_id === me.id ? "<strong>You won!</strong>" : `<strong>${escapeHtml((roundEntries.find(item => item.player_id === activeRound.winner_id) || {}).player_name || "A player")} won this round</strong>`;
+    resultLine = activeRound.winner_id === me.id ? "<strong>You won!</strong>" : `<strong>${escapeHtml((roundEntries.find(item => item.player_id === activeRound.winner_id) || {}).player_name || "A player")} won this round</strong>`;
+  } else if(activeRound.ended_at){
+    resultLine = "<strong>Round ended</strong>";
   } else {
-    status.textContent = `${size}x${size} ${activeRound.scoring_mode === "points" ? "points" : "race"} round in progress`;
+    resultLine = "Round in progress";
   }
+  status.innerHTML = `<div class="settings-line">${escapeHtml(settingsLine)}</div><div>${resultLine}</div>`;
+
+  const masked = tileMaskedFor(entry);
   const grid = document.createElement("div");
   grid.className = "grid bingo-grid";
   grid.style.setProperty("--bingo-size", size);
-  entry.card.forEach(name => grid.appendChild(makeTile({name,key:name}, {marks:entry.marks || {}}, editable, editable ? () => toggleRoundCard(name) : undefined)));
+  entry.card.forEach(name => grid.appendChild(makeTile({name,key:name}, {marks:entry.marks || {}}, editable, editable ? () => toggleRoundCard(name) : undefined, masked)));
   document.getElementById("board").replaceChildren(grid);
 }
 
@@ -1006,20 +1067,26 @@ function renderRoster(){
     });
 }
 
-function makeTile(item, board, editable, onToggle){
+function makeTile(item, board, editable, onToggle, masked){
   const done = !!(board.marks && board.marks[item.key]);
   const tile = document.createElement("button");
-  tile.className = "tile" + (done ? " done" : "");
   tile.type = "button";
   tile.disabled = !editable;
   tile.setAttribute("aria-pressed", done ? "true" : "false");
-  tile.innerHTML = `<img class="weapon-image" src="weapons/${slug(item.name)}.png" alt="" draggable="false">` +
-    `<span class="stamp">${HITMARKER}</span><span class="name">${escapeHtml(item.name)}</span>`;
-  const image = tile.querySelector(".weapon-image");
-  image.onerror = function(){
-    this.insertAdjacentHTML("afterend", BLANK);
-    this.remove();
-  };
+  if(masked && !done){
+    tile.className = "tile masked";
+    tile.setAttribute("aria-label", "Hidden — not marked yet");
+    tile.innerHTML = `<span class="stamp" style="display:flex;">${UNKNOWN_TILE}</span>`;
+  } else {
+    tile.className = "tile" + (done ? " done" : "");
+    tile.innerHTML = `<img class="weapon-image" src="weapons/${slug(item.name)}.png" alt="" draggable="false">` +
+      `<span class="stamp">${HITMARKER}</span><span class="name">${escapeHtml(item.name)}</span>`;
+    const image = tile.querySelector(".weapon-image");
+    image.onerror = function(){
+      this.insertAdjacentHTML("afterend", BLANK);
+      this.remove();
+    };
+  }
   if(editable) tile.addEventListener("click", () => (onToggle || toggle)(item.key));
   return tile;
 }
@@ -1098,6 +1165,10 @@ async function removePlayer(id){
   delete boards[id];
   if(viewingId === id) viewingId = currentBoardId();
   const wasMe = id === currentBoardId();
+  if(activeRound && !activeRound.ended_at){
+    try{ await Store.endRound(activeRound.id); }catch(e){ console.error(e); }
+    activeRound = {...activeRound, ended_at:Date.now()};
+  }
   renderAll();
   try{ await Store.deleteBoard(id, currentRoomCode()); }catch(e){ console.error(e); }
   if(wasMe) location.reload();
@@ -1115,8 +1186,15 @@ async function leaveBoard(){
 
 async function leaveRoom(){
   const oldRoom = currentRoomCode();
+  if(activeRound && !activeRound.ended_at){
+    try{ await Store.endRound(activeRound.id); }catch(e){ console.error(e); }
+  }
   try{ await Store.deleteBoard(currentBoardId(), oldRoom); }catch(e){ console.error(e); }
   me.roomCode = null;
+  me.activeRoundId = null;
+  activeRound = null;
+  roundEntries = [];
+  roundViewingId = null;
   viewingId = currentBoardId();
   boards = {};
   await Store.setMe(me);
@@ -1172,13 +1250,25 @@ document.getElementById("startGridBingoBtn").addEventListener("click", () => {
   renderGridBingoControls();
 });
 document.getElementById("newGridBingoBtn").addEventListener("click", async () => {
-  if(activeRound) await Store.endRound(activeRound.id);
+  if(activeRound && !activeRound.ended_at) await Store.endRound(activeRound.id);
+  roundViewingId = null;
+  if(me.activeRoundId){ me.activeRoundId = null; await Store.setMe(me); }
   await syncNow();
   document.getElementById("gridBingoConfig").dataset.open = "true";
   buildGridBingoConfig();
   renderGridBingoControls();
 });
 document.getElementById("endGridBingoBtn").addEventListener("click", endGridBingo);
+document.getElementById("backToRoomBtn").addEventListener("click", async () => {
+  activeRound = null;
+  roundEntries = [];
+  roundViewingId = null;
+  if(me.activeRoundId){
+    me.activeRoundId = null;
+    await Store.setMe(me);
+  }
+  renderAll();
+});
 document.getElementById("cancelGridBingoBtn").addEventListener("click", () => {
   document.getElementById("gridBingoConfig").dataset.open = "false";
   renderGridBingoControls();
@@ -1197,8 +1287,8 @@ document.getElementById("copyRoomLink").addEventListener("click", async e => {
   url.searchParams.set("room", currentRoomCode());
   try{
     await navigator.clipboard.writeText(url.toString());
-    e.currentTarget.textContent = "Link copied";
-    setTimeout(() => { e.currentTarget.textContent = "Copy invite link"; }, 1600);
+    e.currentTarget.textContent = "Copied!";
+    setTimeout(() => { e.currentTarget.textContent = "Copy invite link"; }, 1500);
   }catch(err){ console.error("copy failed", err); }
 });
 document.getElementById("backToMine").addEventListener("click", () => { viewingId = currentBoardId(); roundViewingId = null; renderAll(); });
