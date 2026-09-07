@@ -573,28 +573,28 @@ const Store = {
     if(index >= 0) entries[index] = entry;
     await window.storage.set(ROOM_PREFIX + "round-entry:" + entry.round_id, JSON.stringify(entries), true);
   },
-  async claimRound(roundId, playerId){
+  async claimRound(roundId, playerId, actorName){
     if(!useRemote()) return false;
     const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&winner_id=is.null`, {
       method:"PATCH",
       headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=representation"},
-      body:JSON.stringify({winner_id:playerId, ended_at:Date.now()})
+      body:JSON.stringify({winner_id:playerId, ended_at:Date.now(), ended_by:actorName})
     });
     if(!res.ok) throw new Error("winner claim failed " + res.status);
     return (await res.json()).length > 0;
   },
-  async endRound(roundId){
+  async endRound(roundId, actorName){
     if(useRemote()){
       const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&ended_at=is.null`, {
         method:"PATCH",
         headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=minimal"},
-        body:JSON.stringify({ended_at:Date.now()})
+        body:JSON.stringify({ended_at:Date.now(), ended_by:actorName})
       });
       if(!res.ok) throw new Error("round end failed " + res.status);
       return;
     }
     const active = await this.getActiveRound(me.roomCode);
-    if(active){ active.ended_at = Date.now(); await window.storage.set(ROOM_PREFIX + me.roomCode + ":round", JSON.stringify(active), true); }
+    if(active){ active.ended_at = Date.now(); active.ended_by = actorName; await window.storage.set(ROOM_PREFIX + me.roomCode + ":round", JSON.stringify(active), true); }
   }
 };
 
@@ -742,6 +742,7 @@ async function syncNow(){
       remote[boardId] = (theirs && theirs.updated > (mine.updated || 0)) ? theirs : mine;
     }
     const gone = viewingId && viewingId !== boardId && !remote[viewingId];
+    const hadRosterBaseline = Boolean(rosterBaseline);
     if(currentRoomCode()){
       if(rosterBaseline){
         Object.keys(remote).forEach(id => {
@@ -757,7 +758,8 @@ async function syncNow(){
     }
     boards = remote;
     if(gone) viewingId = boardId;
-    const previousRoundId = activeRound?.id || me.activeRoundId || null;
+    const previousRound = activeRound;
+    const previousRoundId = previousRound?.id || me.activeRoundId || null;
     activeRound = await Store.getActiveRound(currentRoomCode());
     if(!activeRound && me.activeRoundId){
       const finished = await Store.getRound(me.activeRoundId);
@@ -770,6 +772,21 @@ async function syncNow(){
       roundEntries = await Store.listRoundEntries(activeRound.id);
     }
     const nextRoundId = activeRound?.id || null;
+    // Round start/end toasts — same "previous vs current" diff shape as the roster join/leave
+    // toasts above, gated behind the same hadRosterBaseline flag so a fresh join/reload doesn't
+    // misreport an already-running or already-ended round as just having started/ended.
+    if(currentRoomCode() && hadRosterBaseline){
+      const startedTransition = previousRoundId !== nextRoundId && activeRound && !activeRound.ended_at;
+      if(startedTransition && activeRound.started_by && activeRound.started_by !== me.name){
+        const modeLabel = activeRound.card_mode === "shared" ? "Shared" : "Individual";
+        showToast(`${activeRound.started_by} started a ${activeRound.grid_size}x${activeRound.grid_size} ${modeLabel} round`);
+      }
+      const sameRound = previousRoundId === nextRoundId && Boolean(nextRoundId);
+      const endedTransition = sameRound && previousRound && !previousRound.ended_at && activeRound && activeRound.ended_at;
+      if(endedTransition && activeRound.ended_by && activeRound.ended_by !== me.name){
+        showToast(activeRound.winner_id ? `${activeRound.ended_by} won the round!` : `${activeRound.ended_by} ended the round`);
+      }
+    }
     if(previousRoundId !== nextRoundId) roundViewingId = null;
     if(previousRoundId !== nextRoundId && me.activeRoundId !== nextRoundId){
       me.activeRoundId = nextRoundId;
@@ -961,7 +978,9 @@ async function startGridBingo(){
     card_visibility:gridBingoConfig.cardMode === "individual" ? gridBingoConfig.cardVisibility : "hidden",
     shared_card:sharedCard,
     winner_id:null,
-    ended_at:null
+    ended_at:null,
+    started_by:me.name,
+    ended_by:null
   };
   const entries = members.map(([id,board]) => {
     const card = sharedCard ? sharedCard.slice() : makeRoundCard(round.grid_size);
@@ -974,7 +993,7 @@ async function startGridBingo(){
 
 async function endGridBingo(){
   if(!activeRound) return;
-  await Store.endRound(activeRound.id);
+  await Store.endRound(activeRound.id, me.name);
   await syncNow();
   renderAll();
 }
@@ -994,7 +1013,7 @@ async function toggleRoundCard(name){
   playMarkSound(marked);
   if(full && !finishedAt){
     finishedAt = Date.now();
-    if(await Store.claimRound(activeRound.id, me.id)) points += activeRound.scoring_mode === "points" ? 150 : 0;
+    if(await Store.claimRound(activeRound.id, me.id, me.name)) points += activeRound.scoring_mode === "points" ? 150 : 0;
   }
   const next = {...entry, marks, lines_completed:lines, points, finished_at:finishedAt};
   await Store.saveRoundEntry(next);
@@ -1017,11 +1036,19 @@ function renderRoundBoard(){
   document.getElementById("resetBtn").style.display = "none";
   document.getElementById("leaveBtn").style.display = "none";
 
-  // While a round is active, the header shows round progress instead of the 43-weapon counter.
-  const ownDone = tilesMarkedCount(own);
-  document.getElementById("scoreNum").textContent = `${ownDone} / ${size * size}`;
-  document.getElementById("scoreLbl").textContent = "tiles cleared";
-  document.getElementById("progressFill").style.width = (ownDone / (size * size) * 100) + "%";
+  // While the round is active (not yet ended) the header shows round progress; once it ends, it
+  // reverts to the normal Free Play-style counter even though the round grid/leaderboard stay visible.
+  if(activeRound.ended_at){
+    const doneFP = countDone(myBoard());
+    document.getElementById("scoreNum").textContent = `${doneFP} / ${TOTAL}`;
+    document.getElementById("scoreLbl").textContent = "weapons cleared";
+    document.getElementById("progressFill").style.width = (doneFP / TOTAL * 100) + "%";
+  } else {
+    const ownDone = tilesMarkedCount(own);
+    document.getElementById("scoreNum").textContent = `${ownDone} / ${size * size}`;
+    document.getElementById("scoreLbl").textContent = "tiles cleared";
+    document.getElementById("progressFill").style.width = (ownDone / (size * size) * 100) + "%";
+  }
 
   const leaderboard = document.getElementById("bingoLeaderboard");
   leaderboard.innerHTML = "";
@@ -1228,12 +1255,13 @@ async function toggle(key){
 
 async function removePlayer(id){
   confirmingId = null;
+  const removedName = boards[id]?.name || "A player";
   delete boards[id];
   if(viewingId === id) viewingId = currentBoardId();
   const wasMe = id === currentBoardId();
   if(activeRound && !activeRound.ended_at){
-    try{ await Store.endRound(activeRound.id); }catch(e){ console.error(e); }
-    activeRound = {...activeRound, ended_at:Date.now()};
+    try{ await Store.endRound(activeRound.id, removedName); }catch(e){ console.error(e); }
+    activeRound = {...activeRound, ended_at:Date.now(), ended_by:removedName};
   }
   renderAll();
   try{ await Store.deleteBoard(id, currentRoomCode()); }catch(e){ console.error(e); }
@@ -1253,7 +1281,7 @@ async function leaveBoard(){
 async function leaveRoom(){
   const oldRoom = currentRoomCode();
   if(activeRound && !activeRound.ended_at){
-    try{ await Store.endRound(activeRound.id); }catch(e){ console.error(e); }
+    try{ await Store.endRound(activeRound.id, me.name); }catch(e){ console.error(e); }
   }
   try{ await Store.deleteBoard(currentBoardId(), oldRoom); }catch(e){ console.error(e); }
   me.roomCode = null;
@@ -1316,7 +1344,7 @@ document.getElementById("startGridBingoBtn").addEventListener("click", () => {
   renderGridBingoControls();
 });
 document.getElementById("newGridBingoBtn").addEventListener("click", async () => {
-  if(activeRound && !activeRound.ended_at) await Store.endRound(activeRound.id);
+  if(activeRound && !activeRound.ended_at) await Store.endRound(activeRound.id, me.name);
   roundViewingId = null;
   if(me.activeRoundId){ me.activeRoundId = null; await Store.setMe(me); }
   await syncNow();

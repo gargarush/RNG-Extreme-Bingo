@@ -10,7 +10,9 @@ create table rounds (
   shared_card jsonb,
   winner_id text,
   ended_at bigint,
-  card_visibility text not null default 'hidden'
+  card_visibility text not null default 'hidden',
+  started_by text,
+  ended_by text
 );
 
 alter table rounds enable row level security;
