@@ -13,7 +13,8 @@ create table rounds (
   card_visibility text not null default 'hidden',
   started_by text,
   ended_by text,
-  layout text not null default 'square'
+  layout text not null default 'square',
+  dnf boolean not null default false
 );
 
 alter table rounds enable row level security;

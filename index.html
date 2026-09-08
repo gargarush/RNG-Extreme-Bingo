@@ -6,7 +6,7 @@
 <title>RNG Extreme Bingo — Rivals</title>
 <style>
   :root{
-    --bg:#16101f;--panel:#1e1730;--panel-line:#2f2549;--ink:#ece6f7;--dim:#9c8fb8;
+    --bg:#16101f;--panel:#1e1730;--panel-line:#2f2549;--ink:#ece6f7;--dim:#b8aed6;
     --primary:#ff9d4d;--secondary:#4dc4ff;--melee:#ff4d6a;--utility:#4dffa6;
     --mark:#ff2ee0;--mark-soft:rgba(255,46,224,.25);--tile-min:112px;--tile-icon:30px;--tile-name:10.5px;
   }
@@ -191,6 +191,20 @@
   .round-history-item .rows{display:flex;flex-wrap:wrap;gap:10px;}
   .round-history-item .rows span{color:var(--ink);}
 
+  .player.left{opacity:.5;}
+  .player .left-icon{position:absolute;top:8px;right:8px;color:var(--melee);}
+  .player .left-icon svg{width:15px;height:15px;display:block;}
+  .room-leaderboard-row.left{opacity:.5;}
+  .left-icon-inline{display:inline-flex;vertical-align:middle;margin-left:6px;color:var(--melee);}
+  .left-icon-inline svg{width:13px;height:13px;display:block;}
+
+  .cat-head .mark-all{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;font-family:inherit;}
+  .cat-head .mark-all:hover{border-color:var(--mark);color:var(--ink);}
+
+  .modal-card .btn-row{display:flex;gap:10px;margin-top:4px;}
+  .modal-card .btn-row button{width:auto;flex:1;}
+  .modal-card .btn-row button.ghost{background:transparent;border:1px solid var(--panel-line);color:var(--dim);font-weight:600;}
+
   .category{margin-bottom:34px;}
   .cat-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;}
   .cat-head h2{font-size:16px;text-transform:uppercase;letter-spacing:.09em;margin:0;font-weight:700;}
@@ -296,7 +310,7 @@
 
   <div class="context-bar" id="contextBar"></div>
 
-  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="progress-track" id="progressTrack"><div class="progress-fill" id="progressFill"></div></div>
 
   <div class="roster-head">
     <h2>Everyone playing</h2>
@@ -354,14 +368,14 @@
   </div>
 
   <div class="grid-bingo-controls" id="gridBingoControls">
-    <button id="startGridBingoBtn" class="primary" type="button">Start Grid Bingo</button>
+    <button id="startGridBingoBtn" class="primary" type="button">Start Game</button>
     <button id="newGridBingoBtn" class="primary" type="button">New Round</button>
     <button id="endGridBingoBtn" type="button">End Round</button>
     <button id="backToRoomBtn" type="button">Back to Room</button>
   </div>
   <div class="grid-bingo-config" id="gridBingoConfig">
     <div class="bingo-config-row"><label>Grid size</label><div class="bingo-options" id="gridSizeOptions"></div></div>
-    <div class="bingo-config-row"><label>Card mode</label><div class="bingo-options" id="cardModeOptions"></div></div>
+    <div class="bingo-config-row" id="cardModeRow"><label>Card mode</label><div class="bingo-options" id="cardModeOptions"></div></div>
     <div class="bingo-config-row" id="cardVisibilityRow"><label>Card visibility</label><div class="bingo-options" id="cardVisibilityOptions"></div></div>
     <div class="bingo-config-row"><label>Scoring</label><div class="bingo-options" id="scoringModeOptions"></div></div>
     <div class="bingo-config-actions"><button id="cancelGridBingoBtn" type="button">Cancel</button><button id="confirmGridBingoBtn" class="primary" type="button">Start Round</button></div>
@@ -402,6 +416,17 @@
     <h3>Board cleared</h3>
     <p>Every weapon in Rivals, one kill each. That's the whole board.</p>
     <button id="winClose">Nice</button>
+  </div>
+</div>
+
+<div class="modal" id="finishConfirmModal">
+  <div class="modal-card">
+    <h3>Finish your card?</h3>
+    <p id="finishConfirmText"></p>
+    <div class="btn-row">
+      <button id="finishConfirmNo" class="ghost" type="button">Cancel</button>
+      <button id="finishConfirmYes" type="button">Mark and finish</button>
+    </div>
   </div>
 </div>
 
@@ -621,18 +646,18 @@ const Store = {
     if(!res.ok) throw new Error("winner claim failed " + res.status);
     return (await res.json()).length > 0;
   },
-  async endRound(roundId, actorName){
+  async endRound(roundId, actorName, dnf){
     if(useRemote()){
       const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&ended_at=is.null`, {
         method:"PATCH",
         headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=minimal"},
-        body:JSON.stringify({ended_at:Date.now(), ended_by:actorName})
+        body:JSON.stringify({ended_at:Date.now(), ended_by:actorName, dnf:Boolean(dnf)})
       });
       if(!res.ok) throw new Error("round end failed " + res.status);
       return;
     }
     const active = await this.getActiveRound(me.roomCode);
-    if(active){ active.ended_at = Date.now(); active.ended_by = actorName; await window.storage.set(ROOM_PREFIX + me.roomCode + ":round", JSON.stringify(active), true); }
+    if(active){ active.ended_at = Date.now(); active.ended_by = actorName; active.dnf = Boolean(dnf); await window.storage.set(ROOM_PREFIX + me.roomCode + ":round", JSON.stringify(active), true); }
   },
   async claimWinner(roundId, playerId){
     // Same atomic winner_id-is-null claim as claimRound, but leaves ended_at untouched —
@@ -697,6 +722,7 @@ const BLANK = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke
 const UNKNOWN_TILE = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3" aria-hidden="true"><rect x="6" y="6" width="20" height="20" rx="4"/></svg>';
 const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_CLOSED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/></svg>';
+const EXIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
 
 const ALL = Object.entries(DATA).flatMap(([cat,items]) => items.map(w => ({cat,name:w,key:cat+"::"+w})));
 const TOTAL = ALL.length;
@@ -739,6 +765,16 @@ function shownBoard(){ return boards[viewingId] || myBoard(); }
 function isMine(){ return viewingId === currentBoardId(); }
 function countDone(board){ return ALL.filter(i => board.marks && board.marks[i.key]).length; }
 function playerIdForBoard(id){ return String(id).split("--")[0]; }
+function currentRoomPresentIds(){ return new Set(Object.keys(boards).map(playerIdForBoard)); }
+function knownRoomPlayers(){
+  // Everyone with any history in this room — from ended-round totals or the current round's
+  // entries — regardless of whether they currently have a live board. Used to keep players who
+  // left visible (greyed out) on the roster/leaderboard instead of vanishing outright.
+  const known = new Map();
+  roomLeaderboard.forEach(r => known.set(r.player_id, r.player_name));
+  roundEntries.forEach(e => known.set(e.player_id, e.player_name));
+  return known;
+}
 function shuffle(items){
   const out = items.slice();
   for(let i = out.length - 1; i > 0; i--){
@@ -829,7 +865,13 @@ async function syncNow(){
     if(currentRoomCode()){
       if(rosterBaseline){
         Object.keys(remote).forEach(id => {
-          if(id !== boardId && !rosterBaseline.has(id)) showToast(`${remote[id].name} joined the room`);
+          if(id !== boardId && !rosterBaseline.has(id)){
+            // A single toast for this event: "rejoined" replaces "joined" for anyone with prior
+            // history in this room, it never fires alongside the plain "joined" wording.
+            const pid = playerIdForBoard(id);
+            const hasHistory = roomLeaderboard.some(r => r.player_id === pid) || roundEntries.some(e => e.player_id === pid);
+            showToast(`${remote[id].name} ${hasHistory ? "rejoined" : "joined"} the room`);
+          }
         });
         rosterBaseline.forEach((name, id) => {
           if(id !== boardId && !remote[id]) showToast(`${name} left the room`);
@@ -842,6 +884,7 @@ async function syncNow(){
     boards = remote;
     if(gone) viewingId = boardId;
     const previousRound = activeRound;
+    const previousEntries = roundEntries;
     const previousRoundId = previousRound?.id || me.activeRoundId || null;
     activeRound = await Store.getActiveRound(currentRoomCode());
     if(!activeRound && me.activeRoundId){
@@ -876,7 +919,36 @@ async function syncNow(){
         const sameRound = previousRoundId === nextRoundId && Boolean(nextRoundId);
         const endedTransition = sameRound && previousRound && !previousRound.ended_at && activeRound && activeRound.ended_at;
         if(endedTransition && activeRound.ended_by && activeRound.ended_by !== me.name){
-          showToast(activeRound.winner_id ? `${activeRound.ended_by} won the round!` : `${activeRound.ended_by} ended the round`);
+          if(activeRound.winner_id){
+            // ended_by is whoever's finish crossed the all-but-one threshold, which for >2-player
+            // rounds isn't necessarily the winner (who may have claimed 1st place earlier) — look
+            // the real winner's name up rather than assuming ended_by === winner.
+            const winnerEntry = roundEntries.find(e => e.player_id === activeRound.winner_id);
+            showToast(`${winnerEntry ? winnerEntry.player_name : activeRound.ended_by} won the round!`);
+          } else {
+            showToast(`${activeRound.ended_by} ended the round`);
+          }
+        }
+        // "Got 1st place" fires the moment claimWinner succeeds (>2-player rounds only — the
+        // <=2-player fast path sets winner_id and ended_at together, so endedTransition above
+        // already covers it and this stays silent to avoid a redundant second toast).
+        if(sameRound && activeRound && !activeRound.ended_at){
+          const winnerClaimedTransition = previousRound && !previousRound.winner_id && activeRound.winner_id;
+          if(winnerClaimedTransition && activeRound.winner_id !== me.id){
+            const winnerEntry = roundEntries.find(e => e.player_id === activeRound.winner_id);
+            showToast(`${winnerEntry ? winnerEntry.player_name : "A player"} got 1st place!`);
+          }
+        }
+        // Anyone else finishing their board, skipping the winner (they already got the 1st-place toast).
+        if(sameRound && activeRound){
+          roundEntries.forEach(item => {
+            if(item.player_id === me.id) return;
+            const prevEntry = previousEntries.find(e => e.player_id === item.player_id);
+            const justFinished = item.finished_at && !(prevEntry && prevEntry.finished_at);
+            if(justFinished && item.player_id !== activeRound.winner_id){
+              showToast(`${item.player_name} finished their board`);
+            }
+          });
         }
       }
     }
@@ -900,6 +972,7 @@ async function syncNow(){
         const roundsAsc = endedRounds.slice().sort((a,b) => (a.ended_at || 0) - (b.ended_at || 0));
         const totals = new Map();
         roundsAsc.forEach(r => {
+          if(r.dnf) return; // ended-early rounds award no points, but still appear in round history
           (entriesByRound.get(r.id) || []).forEach(e => {
             const cur = totals.get(e.player_id) || {name:e.player_name, points:0};
             cur.points += e.points || 0;
@@ -1033,6 +1106,30 @@ function renderRoomBar(){
   document.getElementById("roomCodeLabel").textContent = room || "";
 }
 
+// Tile-size picker + reset button: unchanged in Free Play (still always visible, "Reset my
+// board"); hidden entirely in a room except during a live "All"-mode round, where they reappear
+// relabeled "Reset my card" and scoped to the player's own round entry (item 9).
+function renderResetAndTileControls(){
+  const tileBox = document.getElementById("tileSizes");
+  const resetBtn = document.getElementById("resetBtn");
+  const inRoom = Boolean(currentRoomCode());
+  const allModeLive = inRoom && Boolean(activeRound && !activeRound.ended_at && activeRound.layout === "all");
+  const showControls = !inRoom || allModeLive;
+  tileBox.style.display = showControls ? "" : "none";
+  if(!showControls){
+    resetBtn.style.display = "none";
+    return;
+  }
+  if(allModeLive){
+    resetBtn.textContent = "Reset my card";
+    const own = currentRoundEntry();
+    resetBtn.style.display = (own && !own.finished_at) ? "" : "none";
+  } else {
+    resetBtn.textContent = "Reset my board";
+    resetBtn.style.display = isMine() ? "" : "none";
+  }
+}
+
 function renderJoinRoomBar(){
   const show = !currentRoomCode();
   document.getElementById("joinRoomBar").classList.toggle("show", show);
@@ -1047,15 +1144,17 @@ function renderRoomLeaderboard(){
   box.classList.toggle("show", inRoom);
   if(!inRoom) return;
   const list = document.getElementById("roomLeaderboardList");
+  const presentIds = currentRoomPresentIds();
   if(roomLeaderboard.length === 0){
     list.innerHTML = '<div class="empty" style="padding:16px;">No completed rounds yet.</div>';
   } else {
     list.innerHTML = "";
     roomLeaderboard.forEach((row, i) => {
       const rank = i + 1;
+      const left = !presentIds.has(row.player_id);
       const el = document.createElement("div");
-      el.className = "room-leaderboard-row";
-      el.innerHTML = `<span class="nm">${escapeHtml(row.player_name)}${rank <= 3 ? medalBadge(rank) : ""}</span><span class="pts">${row.points} pts</span>`;
+      el.className = "room-leaderboard-row" + (left ? " left" : "");
+      el.innerHTML = `<span class="nm">${escapeHtml(row.player_name)}${rank <= 3 ? medalBadge(rank) : ""}</span><span class="pts">${row.points} pts${left ? `<span class="left-icon-inline">${EXIT_ICON}</span>` : ""}</span>`;
       list.appendChild(el);
     });
   }
@@ -1069,7 +1168,9 @@ function renderRoomLeaderboard(){
       const item = document.createElement("div");
       item.className = "round-history-item";
       let body;
-      if(round.scoring_mode === "points"){
+      if(round.dnf){
+        body = `<div class="rows"><span>Ended early — no points awarded</span></div>`;
+      } else if(round.scoring_mode === "points"){
         const parts = entries.slice().sort((a,b) => (b.points || 0) - (a.points || 0))
           .map(e => `<span>${escapeHtml(e.player_name)}: ${e.points || 0} pts</span>`);
         body = `<div class="rows">${parts.join("")}</div>`;
@@ -1123,10 +1224,16 @@ function buildBingoOptions(id, options, selected, onChange){
 }
 function buildGridBingoConfig(){
   buildBingoOptions("gridSizeOptions", [{label:"3x3",value:3},{label:"4x4",value:4},{label:"5x5",value:5},{label:"All",value:"all"}], gridBingoConfig.gridSize, value => { gridBingoConfig.gridSize = value; buildGridBingoConfig(); });
-  buildBingoOptions("cardModeOptions", [{label:"Same card for everyone",value:"shared"},{label:"Everyone gets their own card",value:"individual"}], gridBingoConfig.cardMode, value => { gridBingoConfig.cardMode = value; buildGridBingoConfig(); });
-  document.getElementById("cardVisibilityRow").style.display = gridBingoConfig.cardMode === "individual" ? "" : "none";
-  if(gridBingoConfig.cardMode === "individual"){
-    buildBingoOptions("cardVisibilityOptions", [{label:"Hidden",value:"hidden"},{label:"Fully visible",value:"visible"},{label:"Reveal as they mark",value:"finish"}], gridBingoConfig.cardVisibility, value => { gridBingoConfig.cardVisibility = value; buildGridBingoConfig(); });
+  const isAllConfig = gridBingoConfig.gridSize === "all";
+  // "All" always behaves like Free Play — one shared view, everyone visible to everyone — so
+  // there's nothing to configure here; card_mode/card_visibility get forced in startGridBingo().
+  document.getElementById("cardModeRow").style.display = isAllConfig ? "none" : "";
+  document.getElementById("cardVisibilityRow").style.display = (!isAllConfig && gridBingoConfig.cardMode === "individual") ? "" : "none";
+  if(!isAllConfig){
+    buildBingoOptions("cardModeOptions", [{label:"Same card for everyone",value:"shared"},{label:"Everyone gets their own card",value:"individual"}], gridBingoConfig.cardMode, value => { gridBingoConfig.cardMode = value; buildGridBingoConfig(); });
+    if(gridBingoConfig.cardMode === "individual"){
+      buildBingoOptions("cardVisibilityOptions", [{label:"Hidden",value:"hidden"},{label:"Fully visible",value:"visible"},{label:"Reveal as they mark",value:"finish"}], gridBingoConfig.cardVisibility, value => { gridBingoConfig.cardVisibility = value; buildGridBingoConfig(); });
+    }
   }
   buildBingoOptions("scoringModeOptions", [{label:"Race only (first full clear wins)",value:"race"},{label:"Points (lines + bonuses)",value:"points"}], gridBingoConfig.scoringMode, value => { gridBingoConfig.scoringMode = value; buildGridBingoConfig(); });
 }
@@ -1139,16 +1246,18 @@ async function startGridBingo(){
   const roundId = crypto.randomUUID ? crypto.randomUUID() : "round-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
   const members = Object.entries(boards);
   const isAll = gridBingoConfig.gridSize === "all";
-  const sharedCard = gridBingoConfig.cardMode === "shared" ? (isAll ? fullCard() : makeRoundCard(gridBingoConfig.gridSize)) : null;
+  // "All" always uses one shared, fully-visible card (item 1) — force these regardless of
+  // whatever card_mode/visibility was left over from a previous square-round configuration.
+  const sharedCard = isAll ? fullCard() : (gridBingoConfig.cardMode === "shared" ? makeRoundCard(gridBingoConfig.gridSize) : null);
   const round = {
     id:roundId,
     room_code:currentRoomCode(),
     created_at:Date.now(),
     grid_size:isAll ? null : gridBingoConfig.gridSize,
     layout:isAll ? "all" : "square",
-    card_mode:gridBingoConfig.cardMode,
+    card_mode:isAll ? "shared" : gridBingoConfig.cardMode,
     scoring_mode:gridBingoConfig.scoringMode,
-    card_visibility:gridBingoConfig.cardMode === "individual" ? gridBingoConfig.cardVisibility : "hidden",
+    card_visibility:isAll ? "visible" : (gridBingoConfig.cardMode === "individual" ? gridBingoConfig.cardVisibility : "hidden"),
     shared_card:sharedCard,
     winner_id:null,
     ended_at:null,
@@ -1166,14 +1275,18 @@ async function startGridBingo(){
 
 async function endGridBingo(){
   if(!activeRound) return;
-  await Store.endRound(activeRound.id, me.name);
+  // Manually ending a round before its natural completion condition is a DNF: excluded from the
+  // room leaderboard's points sum, but still listed (as "ended early") in round history.
+  await Store.endRound(activeRound.id, me.name, true);
   await syncNow();
   renderAll();
 }
 
 async function toggleRoundCard(name){
   const entry = currentRoundEntry();
-  if(!entry || activeRound.ended_at) return;
+  // Once finished_at is set, this entry is permanently locked — no further toggles by any code
+  // path (single tap or the bulk category action), which is the actual fix for the lost-bonus bug.
+  if(!entry || entry.finished_at || activeRound.ended_at) return;
   const marks = {...(entry.marks || {})};
   const marked = !marks[name];
   marks[name] = marked;
@@ -1206,13 +1319,60 @@ async function toggleRoundCard(name){
   renderAll();
 }
 
+function wouldCompleteEntry(entry, name){
+  if(!entry || (entry.marks && entry.marks[name])) return false; // already marked — this toggle would unmark, never completes
+  return roundIsClear(entry.card, {...(entry.marks || {}), [name]:true});
+}
+
+let pendingFinishAction = null;
+function showFinishConfirm(message, onConfirm){
+  document.getElementById("finishConfirmText").textContent = message;
+  pendingFinishAction = onConfirm;
+  document.getElementById("finishConfirmModal").classList.add("show");
+}
+
+// Single choke point for every tile tap in a round: intercepts with a confirmation dialog when
+// the tap would finish the card (item 5), so lock-on-finish can never be bypassed by a normal tap.
+function attemptToggleRoundCard(name){
+  const entry = currentRoundEntry();
+  if(!entry || entry.finished_at || activeRound.ended_at) return;
+  if(wouldCompleteEntry(entry, name)){
+    showFinishConfirm(`Mark ${name} and finish your card? This can't be undone, and everyone else will be notified.`, () => toggleRoundCard(name));
+  } else {
+    toggleRoundCard(name);
+  }
+}
+
+// "All" mode only: mark every unmarked weapon in one category through the exact same
+// toggleRoundCard() path a normal tap uses (recomputes tiles/points, saves, for every weapon it
+// touches) — so it can never drift from single-tap scoring or skip the lock-on-finish check.
+async function markCategoryDone(category){
+  const entry = currentRoundEntry();
+  if(!entry || entry.finished_at || activeRound.ended_at) return;
+  const unmarked = ALL.filter(i => i.cat === category && !(entry.marks && entry.marks[i.name])).map(i => i.name);
+  if(unmarked.length === 0) return;
+  const wouldFinish = roundIsClear(entry.card, {...(entry.marks || {}), ...Object.fromEntries(unmarked.map(n => [n, true]))});
+  const proceed = async () => {
+    for(const name of unmarked){
+      const current = currentRoundEntry();
+      if(!current || current.finished_at || activeRound.ended_at) break; // stops immediately once locked
+      if(!(current.marks && current.marks[name])) await toggleRoundCard(name);
+    }
+  };
+  if(wouldFinish){
+    showFinishConfirm(`Mark all of ${category} and finish your card? This can't be undone, and everyone else will be notified.`, proceed);
+  } else {
+    await proceed();
+  }
+}
+
 const VISIBILITY_LABELS = {hidden:"Hidden", visible:"Fully visible", finish:"Reveal as they mark"};
 function roundSettingsLine(round){
   const visibilityLabel = round.card_mode === "individual" ? VISIBILITY_LABELS[round.card_visibility || "hidden"] : null;
   const scoringLabel = round.scoring_mode === "points" ? "Points" : "Race";
   return [roundSizeLabel(round), roundModeLabel(round, false), visibilityLabel, scoringLabel].filter(Boolean).join(" · ");
 }
-function renderCategorySections(container, marksSource, editable, onToggle, masked){
+function renderCategorySections(container, marksSource, editable, onToggle, masked, allowMarkAll){
   container.innerHTML = "";
   Object.keys(DATA).forEach(cat => {
     const items = ALL.filter(i => i.cat === cat);
@@ -1222,6 +1382,14 @@ function renderCategorySections(container, marksSource, editable, onToggle, mask
     const head = document.createElement("div");
     head.className = "cat-head cat-" + cat.toLowerCase();
     head.innerHTML = `<h2>${cat}</h2><div class="cat-bar"></div><div class="count">${catDone} / ${items.length}</div>`;
+    if(allowMarkAll && catDone < items.length){
+      const markAll = document.createElement("button");
+      markAll.type = "button";
+      markAll.className = "mark-all";
+      markAll.textContent = "Mark all";
+      markAll.addEventListener("click", () => markCategoryDone(cat));
+      head.appendChild(markAll);
+    }
     section.appendChild(head);
     const grid = document.createElement("div");
     grid.className = "grid";
@@ -1239,7 +1407,7 @@ function renderRoundBoard(){
   const size = Number(activeRound.grid_size);
   const viewed = (roundViewingId && roundViewingId !== me.id) ? roundEntries.find(e => e.player_id === roundViewingId) : null;
   const entry = (viewed && canViewRoundEntry(viewed)) ? viewed : own;
-  const editable = entry.player_id === me.id && !activeRound.ended_at;
+  const editable = entry.player_id === me.id && !activeRound.ended_at && !entry.finished_at;
   document.getElementById("viewingBanner").classList.toggle("show", entry.player_id !== me.id);
   document.getElementById("viewingName").textContent = entry.player_name;
   document.getElementById("resetBtn").style.display = "none";
@@ -1316,13 +1484,13 @@ function renderRoundBoard(){
   const masked = tileMaskedFor(entry);
   if(isAll){
     const container = document.createElement("div");
-    renderCategorySections(container, entry.marks || {}, editable, toggleRoundCard, masked);
+    renderCategorySections(container, entry.marks || {}, editable, attemptToggleRoundCard, masked, editable);
     document.getElementById("board").replaceChildren(container);
   } else {
     const grid = document.createElement("div");
     grid.className = "grid bingo-grid";
     grid.style.setProperty("--bingo-size", size);
-    entry.card.forEach(name => grid.appendChild(makeTile({name,key:name}, {marks:entry.marks || {}}, editable, editable ? () => toggleRoundCard(name) : undefined, masked)));
+    entry.card.forEach(name => grid.appendChild(makeTile({name,key:name}, {marks:entry.marks || {}}, editable, editable ? () => attemptToggleRoundCard(name) : undefined, masked)));
     document.getElementById("board").replaceChildren(grid);
   }
 }
@@ -1336,16 +1504,25 @@ function renderRoster(){
   const box = document.getElementById("roster");
   box.innerHTML = "";
   const entries = Object.entries(boards);
-  if(entries.length === 0){
+  const inRoom = Boolean(currentRoomCode());
+  const pointsFor = pid => roomLeaderboard.find(r => r.player_id === pid)?.points || 0;
+  const leftPlayers = [];
+  if(inRoom){
+    const presentIds = currentRoomPresentIds();
+    knownRoomPlayers().forEach((name, pid) => { if(!presentIds.has(pid)) leftPlayers.push({player_id:pid, player_name:name}); });
+  }
+  if(entries.length === 0 && leftPlayers.length === 0){
     box.innerHTML = '<div class="empty">Nobody has joined yet.</div>';
     return;
   }
   entries
-    .sort((a,b) => countDone(b[1]) - countDone(a[1]) || a[1].name.localeCompare(b[1].name))
+    .sort((a,b) => inRoom
+      ? (pointsFor(playerIdForBoard(b[0])) - pointsFor(playerIdForBoard(a[0])) || a[1].name.localeCompare(b[1].name))
+      : (countDone(b[1]) - countDone(a[1]) || a[1].name.localeCompare(b[1].name)))
     .forEach(([id,b]) => {
       const done = countDone(b);
       const card = document.createElement("div");
-      card.className = "player" + (id === viewingId ? " viewing" : "") + (done === TOTAL ? " finished" : "");
+      card.className = "player" + (id === viewingId ? " viewing" : "") + (!inRoom && done === TOTAL ? " finished" : "");
 
       if(confirmingId === id){
         card.innerHTML = `<div class="confirm"><span>Remove <b>${escapeHtml(b.name)}</b>?</span>
@@ -1356,11 +1533,13 @@ function renderRoster(){
         const open = document.createElement("button");
         open.className = "open";
         open.type = "button";
-        open.innerHTML =
-          `<div class="top"><span class="nm">${escapeHtml(b.name)}</span><span class="ct">${done} / ${TOTAL}</span></div>` +
-          (id === currentBoardId() ? '<div class="you">YOU</div>' : "") +
-          `<div class="bar"><i style="width:${done/TOTAL*100}%"></i></div>`;
-        open.addEventListener("click", () => { viewingId = id; renderAll(); });
+        open.innerHTML = inRoom
+          ? `<div class="top"><span class="nm">${escapeHtml(b.name)}</span><span class="ct">${pointsFor(playerIdForBoard(id))} pts</span></div>` +
+            (id === currentBoardId() ? '<div class="you">YOU</div>' : "")
+          : `<div class="top"><span class="nm">${escapeHtml(b.name)}</span><span class="ct">${done} / ${TOTAL}</span></div>` +
+            (id === currentBoardId() ? '<div class="you">YOU</div>' : "") +
+            `<div class="bar"><i style="width:${done/TOTAL*100}%"></i></div>`;
+        if(!inRoom) open.addEventListener("click", () => { viewingId = id; renderAll(); }); // no per-player board to view in-room (item 7)
         card.appendChild(open);
 
         const kill = document.createElement("button");
@@ -1371,6 +1550,14 @@ function renderRoster(){
         kill.addEventListener("click", e => { e.stopPropagation(); confirmingId = id; renderRoster(); });
         card.appendChild(kill);
       }
+      box.appendChild(card);
+    });
+  leftPlayers
+    .sort((a,b) => a.player_name.localeCompare(b.player_name))
+    .forEach(p => {
+      const card = document.createElement("div");
+      card.className = "player left";
+      card.innerHTML = `<div class="top"><span class="nm">${escapeHtml(p.player_name)}</span><span class="ct">${pointsFor(p.player_id)} pts</span></div><span class="left-icon">${EXIT_ICON}</span>`;
       box.appendChild(card);
     });
 }
@@ -1400,12 +1587,28 @@ function makeTile(item, board, editable, onToggle, masked){
 }
 
 function renderBoard(){
+  document.getElementById("progressTrack").style.display = "";
   if(activeRound && currentRoomCode()){
     renderRoundBoard();
     return;
   }
   document.getElementById("bingoLeaderboard").classList.remove("show");
   document.getElementById("gridBingoStatus").classList.remove("show");
+
+  if(currentRoomCode()){
+    // In a room with no active round: no default 43-weapon tracker (item 7) — just the room
+    // code/leaderboard/history/Start Game elsewhere on the page. Header shows room points (item 8).
+    // Free Play (currentRoomCode() null) never reaches this branch and is untouched below.
+    document.getElementById("board").innerHTML = "";
+    document.getElementById("progressTrack").style.display = "none";
+    document.getElementById("viewingBanner").classList.remove("show");
+    document.getElementById("leaveBtn").style.display = "none";
+    const myPoints = roomLeaderboard.find(r => r.player_id === me.id)?.points || 0;
+    document.getElementById("scoreNum").textContent = `${myPoints}`;
+    document.getElementById("scoreLbl").textContent = "room points";
+    return;
+  }
+
   const board = shownBoard();
   const editable = isMine();
   const el = document.getElementById("board");
@@ -1451,7 +1654,7 @@ function renderBoard(){
   }
 }
 
-function renderAll(){ renderRoster(); renderBoard(); renderRoomBar(); renderJoinRoomBar(); renderGridBingoControls(); renderContextBar(); renderRoomLeaderboard(); }
+function renderAll(){ renderRoster(); renderBoard(); renderRoomBar(); renderJoinRoomBar(); renderGridBingoControls(); renderContextBar(); renderRoomLeaderboard(); renderResetAndTileControls(); }
 
 /* ============================ actions ============================ */
 async function toggle(key){
@@ -1516,7 +1719,7 @@ async function leaveRoom(){
 function celebrate(){
   document.getElementById("winOverlay").classList.add("show");
   const accent = getComputedStyle(document.documentElement).getPropertyValue("--mark").trim();
-  const colors = [accent, "#ffffff", "#9c8fb8"];
+  const colors = [accent, "#ffffff", "#b8aed6"];
   for(let n = 0; n < 60; n++){
     const c = document.createElement("div");
     c.className = "confetti";
@@ -1544,6 +1747,16 @@ document.getElementById("clearSearch").addEventListener("click", () => {
   renderBoard();
 });
 document.getElementById("resetBtn").addEventListener("click", async () => {
+  const allModeLive = Boolean(currentRoomCode() && activeRound && !activeRound.ended_at && activeRound.layout === "all");
+  if(allModeLive){
+    const entry = currentRoundEntry();
+    if(!entry || entry.finished_at) return; // a finished entry is permanently locked — no reset either
+    const next = {...entry, marks:{}, lines_completed:0, points:0, finished_at:null};
+    await Store.saveRoundEntry(next);
+    await syncNow();
+    renderAll();
+    return;
+  }
   const b = myBoard();
   b.marks = {};
   b.updated = Date.now();
@@ -1627,6 +1840,16 @@ document.getElementById("toggleRoundHistoryBtn").addEventListener("click", () =>
 });
 document.getElementById("winClose").addEventListener("click", () => {
   document.getElementById("winOverlay").classList.remove("show");
+});
+document.getElementById("finishConfirmYes").addEventListener("click", async () => {
+  const action = pendingFinishAction;
+  pendingFinishAction = null;
+  document.getElementById("finishConfirmModal").classList.remove("show");
+  if(action) await action();
+});
+document.getElementById("finishConfirmNo").addEventListener("click", () => {
+  pendingFinishAction = null;
+  document.getElementById("finishConfirmModal").classList.remove("show");
 });
 document.getElementById("refreshBtn").addEventListener("click", async () => {
   await syncNow();
