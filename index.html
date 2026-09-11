@@ -443,6 +443,7 @@
       </label>
     </div>
     <div class="bingo-config-row"><label>Scoring</label><div class="bingo-options" id="scoringModeOptions"></div></div>
+    <div class="bingo-config-row" id="underdogBonusRow"><label>Underdog bonus</label><div class="bingo-options" id="underdogBonusOptions"></div></div>
     <div class="bingo-config-actions"><button id="cancelGridBingoBtn" type="button">Cancel</button><button id="confirmGridBingoBtn" class="primary" type="button">Start Round</button></div>
   </div>
   <div class="grid-bingo-status" id="gridBingoStatus"></div>
@@ -839,7 +840,7 @@ let audioContext = null;
 let activeRound = null;
 let roundEntries = [];
 let roundViewingId = null;
-let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisibility:"hidden",teamFormation:"random",manualTeams:{},teamSharedEdit:false};
+let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisibility:"hidden",teamFormation:"random",manualTeams:{},teamSharedEdit:false,underdogBonus:"none"};
 let rosterBaseline = null;
 let roomLeaderboard = [];
 let roundHistory = [];
@@ -941,6 +942,30 @@ function roundLines(card, marks, size){
   return lines;
 }
 function roundIsClear(card, marks){ return card.every(name => marks[name]); }
+// Underdog multiplier: largerTeamSize / smallerTeamSize, applied only to the smaller team's
+// entry — 1 (no effect) for race mode, non-team rounds, equal teams, or bonus "none". Kept
+// separate from computeRoundPoints() below so both can be unit-reasoned about independently, but
+// always called from there — never inlined at a call site.
+function underdogMultiplierFor(round, entryPlayerId){
+  if(!round.teams || round.scoring_mode !== "points" || !round.underdog_bonus || round.underdog_bonus === "none") return 1;
+  const sizeA = (round.teams["team-A"] || []).length;
+  const sizeB = (round.teams["team-B"] || []).length;
+  if(sizeA === sizeB || sizeA === 0 || sizeB === 0) return 1;
+  const smallerKey = sizeA < sizeB ? "team-A" : "team-B";
+  if(entryPlayerId !== smallerKey) return 1;
+  return Math.max(sizeA, sizeB) / Math.min(sizeA, sizeB);
+}
+// Single shared scoring formula: the only place tiles/lines/full-clear turn into points, used both
+// at round creation (a team round's handicap-pre-marked initial points) and on every tile toggle,
+// so the underdog-multiplier math can never drift out of sync between the two call sites.
+function computeRoundPoints(round, entryPlayerId, tiles, lines, full){
+  if(round.scoring_mode !== "points") return 0;
+  const linesAndFinish = lines * 100 + (full ? 250 : 0);
+  const multiplier = underdogMultiplierFor(round, entryPlayerId);
+  if(multiplier === 1) return tiles * 10 + linesAndFinish;
+  if(round.underdog_bonus === "per_tile") return Math.round(tiles * 10 * multiplier) + linesAndFinish;
+  return Math.round((tiles * 10 + linesAndFinish) * multiplier); // "everything"
+}
 // Team MVP (item 6): most tiles credited in marked_by wins; ties break on line-closes, then on
 // who marked the card's final tile. Handicap pre-marks have no marked_by entry, so they're
 // automatically excluded from all three — nothing to opt out of.
@@ -1258,6 +1283,11 @@ function buildSwatches(){
     b.setAttribute("aria-label","Accent colour " + a.id);
     b.addEventListener("click", async () => {
       me.accent = a.id; applyAccent(); buildSwatches(); await Store.setMe(me);
+      // Push the new accent to the shared boards row right away — Store.setMe() only persists it
+      // locally. Without this, teammates only see a stale/null accent until this player's board
+      // happens to get saved for an unrelated reason (marking a tile, joining a room), which could
+      // be a long time or never — this was the actual cause of the manual-assignment highlight bug.
+      try{ await Store.saveBoard(currentBoardId(), myBoard(), currentRoomCode()); }catch(e){ console.error("accent save failed", e); }
     });
     box.appendChild(b);
   });
@@ -1489,10 +1519,9 @@ function buildTeamAssignRows(members){
       btn.textContent = label;
       const selected = gridBingoConfig.manualTeams[pid] === value;
       btn.className = selected ? "on" : "";
-      if(selected){
-        btn.style.borderColor = accent.hex;
-        btn.style.boxShadow = `0 0 0 1px ${accent.soft}`;
-      }
+      // Soft glow in this player's own accent, not a bright solid ring — accent.soft is already
+      // a ~25% alpha rgba() of their color, so it reads as a gentle highlight, not a neon border.
+      if(selected) btn.style.boxShadow = `0 0 10px 3px ${accent.soft}`;
       btn.addEventListener("click", () => { gridBingoConfig.manualTeams[pid] = value; buildGridBingoConfig(); });
       opts.appendChild(btn);
     });
@@ -1540,6 +1569,13 @@ function buildGridBingoConfig(){
     if(gridBingoConfig.teamFormation === "manual") buildTeamAssignRows(members);
   }
   buildBingoOptions("scoringModeOptions", [{label:"Race only (first full clear wins)",value:"race"},{label:"Points (lines + bonuses)",value:"points"}], gridBingoConfig.scoringMode, value => { gridBingoConfig.scoringMode = value; buildGridBingoConfig(); });
+  // Underdog bonus (item 2): team mode + points scoring only — it's inert on race mode or equal
+  // teams, but shown whenever it COULD matter rather than flickering as teams get rebalanced.
+  const showUnderdogBonus = isTeamMode && gridBingoConfig.scoringMode === "points";
+  document.getElementById("underdogBonusRow").style.display = showUnderdogBonus ? "" : "none";
+  if(showUnderdogBonus){
+    buildBingoOptions("underdogBonusOptions", [{label:"None",value:"none"},{label:"Per-tile only",value:"per_tile"},{label:"Everything",value:"everything"}], gridBingoConfig.underdogBonus, value => { gridBingoConfig.underdogBonus = value; buildGridBingoConfig(); });
+  }
   document.getElementById("confirmGridBingoBtn").disabled = !teamConfigValid(members);
 }
 
@@ -1584,7 +1620,8 @@ async function startTeamGridBingo(roundId, members){
     started_by:me.name,
     ended_by:null,
     teams,
-    team_shared_edit:Boolean(gridBingoConfig.teamSharedEdit)
+    team_shared_edit:Boolean(gridBingoConfig.teamSharedEdit),
+    underdog_bonus:gridBingoConfig.underdogBonus || "none"
   };
   const sizeA = teams["team-A"].length, sizeB = teams["team-B"].length;
   const playerGap = Math.abs(sizeA - sizeB);
@@ -1603,7 +1640,7 @@ async function startTeamGridBingo(roundId, members){
     }
     const lines = isAll ? 0 : roundLines(card, marks, round.grid_size);
     const tiles = tilesMarkedCount({marks});
-    const points = round.scoring_mode === "points" ? tiles * 10 + lines * 100 : 0;
+    const points = computeRoundPoints(round, teamKey, tiles, lines, false); // never "full" at creation
     return {round_id:roundId, player_id:teamKey, player_name:teamKey === "team-A" ? "Team A" : "Team B", card, marks, marked_by:{}, blocked_attempts:{}, lines_completed:lines, points, finished_at:null, version:0};
   });
   await Store.createRound(round, entries);
@@ -1692,7 +1729,7 @@ async function toggleRoundCard(name){
     const lines = isAll ? 0 : roundLines(base.card, marks, size); // no line concept for the 43-item "All" layout
     const full = roundIsClear(base.card, marks);
     const tiles = tilesMarkedCount({marks});
-    const points = activeRound.scoring_mode === "points" ? tiles * 10 + lines * 100 + (full ? 250 : 0) : 0;
+    const points = computeRoundPoints(activeRound, base.player_id, tiles, lines, full);
     const justFinished = full && !base.finished_at;
     const finishedAt = justFinished ? Date.now() : (base.finished_at || null);
     const next = {...base, marks, marked_by:markedBy, lines_completed:lines, points, finished_at:finishedAt};

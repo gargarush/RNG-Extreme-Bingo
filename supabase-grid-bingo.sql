@@ -25,6 +25,7 @@ alter table rounds add column if not exists layout text not null default 'square
 alter table rounds add column if not exists dnf boolean not null default false;
 alter table rounds add column if not exists teams jsonb;
 alter table rounds add column if not exists team_shared_edit boolean not null default false;
+alter table rounds add column if not exists underdog_bonus text not null default 'none';
 
 alter table rounds enable row level security;
 drop policy if exists "read" on rounds;
