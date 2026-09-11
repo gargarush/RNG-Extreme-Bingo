@@ -1046,15 +1046,22 @@ function playerEntryForBoard(id){ return roundEntries.find(entry => entry.player
 function canViewRoundEntry(entry){
   if(!activeRound || !entry) return false;
   // myEntryId() already resolves to "my" team's key in a team round, so this and everything below
-  // already works identically for solo and team rounds — no team-specific branch needed (item 4).
+  // already works identically for solo and team rounds — no team-specific branch needed.
   if(entry.player_id === myEntryId()) return true;
-  if(activeRound.card_mode !== "individual") return true; // shared: identical card, nothing to hide
   if(activeRound.ended_at) return true;
+  // Universal visibility (item 1): WHETHER you can open someone's board is governed by this
+  // setting for every card mode now, shared included — there's no more built-in "shared always
+  // viewable" shortcut. WHAT a tile looks like once you're allowed to open it is a separate
+  // question, answered by tileMaskedFor() below, not here.
   const visibility = activeRound.card_visibility || "hidden";
   if(visibility === "visible") return true;
   if(visibility === "finish") return true;
   return false;
 }
+// Already correct for item 1 without changes: gating on card_mode === "individual" means a
+// shared-card board (canViewRoundEntry already gated WHETHER you can open it) never masks
+// individual tiles once opened — there's nothing to hide, you already know the card content.
+// Only individual-card rounds with "Reveal as they mark" progressively unmask by identity.
 function tileMaskedFor(entry){
   return activeRound.card_mode === "individual" && !activeRound.ended_at && (activeRound.card_visibility || "hidden") === "finish" && entry.player_id !== myEntryId();
 }
@@ -1579,13 +1586,12 @@ function buildGridBingoConfig(){
   const isTeamMode = isTeamRoomSize(members);
   buildBingoOptions("gridSizeOptions", [{label:"3x3",value:3},{label:"4x4",value:4},{label:"5x5",value:5},{label:"All",value:"all"}], gridBingoConfig.gridSize, value => { gridBingoConfig.gridSize = value; buildGridBingoConfig(); });
   const isAllConfig = gridBingoConfig.gridSize === "all";
-  // "All" always behaves like Free Play — one shared view, everyone visible to everyone — so
-  // there's nothing to configure here; card_mode/card_visibility get forced in startGridBingo()
-  // (and in startTeamGridBingo() for team rounds) regardless of team vs solo — that's the one
-  // case that stays forced. Card mode/visibility are otherwise available in team mode too now,
-  // reusing this exact same config UI (item 1) — just relabeled below for team context (item 2).
+  // "All" has only one possible card (the full 43-weapon pool) — there's genuinely nothing to
+  // pick for card mode there, team mode or not. Visibility is a separate question — whether you
+  // can open an opponent's board at all — and now applies universally (item 1): every grid size,
+  // every card mode, including "All" and "shared", so it's no longer nested under either.
   document.getElementById("cardModeRow").style.display = isAllConfig ? "none" : "";
-  document.getElementById("cardVisibilityRow").style.display = (!isAllConfig && gridBingoConfig.cardMode === "individual") ? "" : "none";
+  document.getElementById("cardVisibilityRow").style.display = "";
   document.getElementById("teamFormationRow").style.display = isTeamMode ? "" : "none";
   document.getElementById("teamSharedEditRow").style.display = isTeamMode ? "" : "none";
   document.getElementById("teamAssignBox").classList.toggle("show", isTeamMode && gridBingoConfig.teamFormation === "manual");
@@ -1594,10 +1600,8 @@ function buildGridBingoConfig(){
       ? [{label:"Same card for both teams",value:"shared"},{label:"Different card per team",value:"individual"}]
       : [{label:"Same card for everyone",value:"shared"},{label:"Everyone gets their own card",value:"individual"}];
     buildBingoOptions("cardModeOptions", cardModeOptions, gridBingoConfig.cardMode, value => { gridBingoConfig.cardMode = value; buildGridBingoConfig(); });
-    if(gridBingoConfig.cardMode === "individual"){
-      buildBingoOptions("cardVisibilityOptions", [{label:"Hidden",value:"hidden"},{label:"Fully visible",value:"visible"},{label:"Reveal as they mark",value:"finish"}], gridBingoConfig.cardVisibility, value => { gridBingoConfig.cardVisibility = value; buildGridBingoConfig(); });
-    }
   }
+  buildBingoOptions("cardVisibilityOptions", [{label:"Hidden",value:"hidden"},{label:"Fully visible",value:"visible"},{label:"Reveal as they mark",value:"finish"}], gridBingoConfig.cardVisibility, value => { gridBingoConfig.cardVisibility = value; buildGridBingoConfig(); });
   if(isTeamMode){
     buildBingoOptions("teamFormationOptions", [{label:"Random",value:"random"},{label:"Manual",value:"manual"}], gridBingoConfig.teamFormation, value => { gridBingoConfig.teamFormation = value; buildGridBingoConfig(); });
     document.getElementById("teamSharedEditCheckbox").checked = Boolean(gridBingoConfig.teamSharedEdit);
@@ -1640,11 +1644,12 @@ function buildTeams(members){
 async function startTeamGridBingo(roundId, members){
   const teams = buildTeams(members);
   const isAll = gridBingoConfig.gridSize === "all";
-  // Card mode/visibility now come from the same config the solo path uses (item 3) — "All" still
-  // forces shared+hidden regardless of whatever was left over from a previous square-round
-  // configuration, exactly like the solo path already does; that's the one case that doesn't change.
+  // Card mode comes from the same config the solo path uses — "All" still forces "shared"
+  // regardless of whatever was left over from a previous square-round configuration, since there's
+  // only one possible card there anyway. Visibility is now universal (item 1): it applies to every
+  // card mode and grid size, "All" and "shared" included, so it's no longer forced/nested here.
   const cardMode = isAll ? "shared" : (gridBingoConfig.cardMode || "shared");
-  const cardVisibility = isAll ? "hidden" : (cardMode === "individual" ? (gridBingoConfig.cardVisibility || "hidden") : "hidden");
+  const cardVisibility = gridBingoConfig.cardVisibility || "hidden";
   // Same pattern as the solo path's sharedCard: generated ONCE here (not per-entry) so both teams
   // get an identical copy under "shared" mode — computing it inside the per-team loop would give
   // each team its own independent shuffle even though the size matched, which isn't "shared".
@@ -1703,10 +1708,10 @@ async function startGridBingo(){
     renderAll();
     return;
   }
-  // 2-or-fewer members: completely unchanged from before team mode existed.
+  // 2-or-fewer members: unchanged except that visibility is now universal (item 1), same as team
+  // rounds — "All" still uses one shared card (there's genuinely only one possible card there),
+  // but no longer forces "visible" regardless of what was actually configured.
   const isAll = gridBingoConfig.gridSize === "all";
-  // "All" always uses one shared, fully-visible card (item 1) — force these regardless of
-  // whatever card_mode/visibility was left over from a previous square-round configuration.
   const sharedCard = isAll ? fullCard() : (gridBingoConfig.cardMode === "shared" ? makeRoundCard(gridBingoConfig.gridSize) : null);
   const round = {
     id:roundId,
@@ -1716,7 +1721,7 @@ async function startGridBingo(){
     layout:isAll ? "all" : "square",
     card_mode:isAll ? "shared" : gridBingoConfig.cardMode,
     scoring_mode:gridBingoConfig.scoringMode,
-    card_visibility:isAll ? "visible" : (gridBingoConfig.cardMode === "individual" ? gridBingoConfig.cardVisibility : "hidden"),
+    card_visibility:gridBingoConfig.cardVisibility || "hidden",
     shared_card:sharedCard,
     winner_id:null,
     ended_at:null,
@@ -1888,7 +1893,9 @@ async function markCategoryDone(category){
 
 const VISIBILITY_LABELS = {hidden:"Hidden", visible:"Fully visible", finish:"Reveal as they mark"};
 function roundSettingsLine(round){
-  const visibilityLabel = round.card_mode === "individual" ? VISIBILITY_LABELS[round.card_visibility || "hidden"] : null;
+  // Universal visibility (item 1): shown regardless of card_mode now, not just "individual" —
+  // shared-card rounds have a real, meaningful visibility setting too.
+  const visibilityLabel = VISIBILITY_LABELS[round.card_visibility || "hidden"];
   const scoringLabel = round.scoring_mode === "points" ? "Points" : "Race";
   return [roundSizeLabel(round), roundModeLabel(round, false), visibilityLabel, scoringLabel].filter(Boolean).join(" · ");
 }
@@ -1933,13 +1940,13 @@ function renderRoundBoard(){
   document.getElementById("resetBtn").style.display = "none";
   document.getElementById("leaveBtn").style.display = "none";
 
-  // While the round is active (not yet ended) the header shows round progress; once it ends, it
-  // reverts to the normal Free Play-style counter even though the round grid/leaderboard stay visible.
+  // While the round is active (not yet ended) the header shows round progress; once it ends, the
+  // round grid/leaderboard stay visible but there's nothing actively being tracked at that moment
+  // (the old fallback here referenced the default 43-weapon tracker, which no longer exists in a room).
   if(activeRound.ended_at){
-    const doneFP = countDone(myBoard());
-    document.getElementById("scoreNum").textContent = `${doneFP} / ${TOTAL}`;
-    document.getElementById("scoreLbl").textContent = "weapons cleared";
-    document.getElementById("progressFill").style.width = (doneFP / TOTAL * 100) + "%";
+    document.getElementById("scoreNum").textContent = "—";
+    document.getElementById("scoreLbl").textContent = "Idle";
+    document.getElementById("progressFill").style.width = "0%";
   } else {
     const ownDone = tilesMarkedCount(own);
     const ownTotal = own.card.length; // size*size for square rounds, 43 for "All" — works either way
@@ -1981,7 +1988,11 @@ function renderRoundBoard(){
     // individual — round.teams[item.player_id] is the member id list for this team's entry.
     const members = activeRound.teams && activeRound.teams[item.player_id];
     const membersLine = members ? `<div class="team-members">${members.map(pid => escapeHtml(teamMemberName(pid))).join(", ")}</div>` : "";
-    const mvpName = (members && activeRound.ended_at) ? computeTeamMVP(item, activeRound) : null;
+    // Live MVP (item 2): computed on every render now, not just after the round ends — it already
+    // degrades correctly with no finisher yet. Still gated on `viewable`, not just `ended_at`, so
+    // an opponent whose board is currently hidden from you doesn't leak "who's been active" ahead
+    // of the visibility rule that's supposed to hide their progress in the first place.
+    const mvpName = (members && viewable) ? computeTeamMVP(item, activeRound) : null;
     const mvpLine = mvpName ? `<div class="team-mvp">MVP: ${escapeHtml(mvpName)}</div>` : "";
     const inner = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}${badge}${visIcon}</span></div>${membersLine}<div class="bingo-score">${score}</div>${mvpLine}`;
     if(viewable){
@@ -2137,7 +2148,7 @@ function renderBoard(){
     document.getElementById("leaveBtn").style.display = "none";
     const myPoints = roomLeaderboard.find(r => r.player_id === me.id)?.points || 0;
     document.getElementById("scoreNum").textContent = `${myPoints}`;
-    document.getElementById("scoreLbl").textContent = "room points";
+    document.getElementById("scoreLbl").textContent = "my room points";
     return;
   }
 
