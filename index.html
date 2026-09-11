@@ -942,6 +942,29 @@ function roundLines(card, marks, size){
   return lines;
 }
 function roundIsClear(card, marks){ return card.every(name => marks[name]); }
+// marked_by sentinel for a team round's handicap pre-marks (item 1) — never a real player id, so
+// every place that attributes a mark to "whoever did it" must check for and exclude this value.
+const HANDICAP_PLAYER_ID = "__handicap__";
+// The only place a team entry's scoring-relevant tiles/lines get derived (item 7) — a handicap
+// pre-mark is a freebie, not an earned tile or a line closed by anyone, so it's excluded from
+// both counts here. Used identically at round creation and on every tile-toggle recalculation, so
+// this can't drift into two slightly-different implementations. Deliberately separate from
+// tilesMarkedCount()/roundLines() (items 3-4), which keep reporting the raw/structural counts
+// unchanged for solo/individual entries and for display purposes (progress bars, full-clear
+// detection) — those never exclude handicap tiles, since the tile really is visually marked.
+function teamScoringInputs(round, card, marks, markedBy){
+  const isRealMark = name => { const m = markedBy[name]; return Boolean(m && m.playerId && m.playerId !== HANDICAP_PLAYER_ID); };
+  const tiles = Object.values(markedBy).filter(m => m && m.playerId && m.playerId !== HANDICAP_PLAYER_ID).length;
+  if(round.layout === "all") return {tiles, lines:0};
+  const size = Number(round.grid_size);
+  let lines = 0;
+  const countLine = cells => { if(cells.every(name => marks[name]) && cells.some(isRealMark)) lines++; };
+  for(let row = 0; row < size; row++) countLine(card.slice(row * size, row * size + size));
+  for(let col = 0; col < size; col++) countLine(Array.from({length:size}, (_, row) => card[row * size + col]));
+  countLine(Array.from({length:size}, (_, i) => card[i * size + i]));
+  countLine(Array.from({length:size}, (_, i) => card[i * size + (size - i - 1)]));
+  return {tiles, lines};
+}
 // Underdog multiplier: largerTeamSize / smallerTeamSize, applied only to the smaller team's
 // entry — 1 (no effect) for race mode, non-team rounds, equal teams, or bonus "none". Kept
 // separate from computeRoundPoints() below so both can be unit-reasoned about independently, but
@@ -967,13 +990,14 @@ function computeRoundPoints(round, entryPlayerId, tiles, lines, full){
   return Math.round((tiles * 10 + linesAndFinish) * multiplier); // "everything"
 }
 // Team MVP (item 6): most tiles credited in marked_by wins; ties break on line-closes, then on
-// who marked the card's final tile. Handicap pre-marks have no marked_by entry, so they're
-// automatically excluded from all three — nothing to opt out of.
+// who marked the card's final tile. Handicap pre-marks now carry an explicit HANDICAP_PLAYER_ID
+// sentinel in marked_by rather than no entry at all, so every loop below excludes it explicitly —
+// it must never appear as a phantom "player" in the MVP calculation.
 function computeTeamMVP(entry, round){
   const markedBy = entry.marked_by || {};
   const tileCounts = new Map();
   Object.values(markedBy).forEach(m => {
-    if(!m || !m.playerId) return;
+    if(!m || !m.playerId || m.playerId === HANDICAP_PLAYER_ID) return;
     tileCounts.set(m.playerId, (tileCounts.get(m.playerId) || 0) + 1);
   });
   const lineCloses = new Map();
@@ -991,14 +1015,14 @@ function computeTeamMVP(entry, round){
       let bestPid = null, bestAt = -Infinity;
       line.forEach(name => {
         const m = markedBy[name];
-        if(m && m.playerId && m.at > bestAt){ bestAt = m.at; bestPid = m.playerId; }
+        if(m && m.playerId && m.playerId !== HANDICAP_PLAYER_ID && m.at > bestAt){ bestAt = m.at; bestPid = m.playerId; }
       });
       if(bestPid) lineCloses.set(bestPid, (lineCloses.get(bestPid) || 0) + 1);
     });
   }
   let finisherPid = null, finisherAt = -Infinity;
   Object.values(markedBy).forEach(m => {
-    if(m && m.playerId && m.at > finisherAt){ finisherAt = m.at; finisherPid = m.playerId; }
+    if(m && m.playerId && m.playerId !== HANDICAP_PLAYER_ID && m.at > finisherAt){ finisherAt = m.at; finisherPid = m.playerId; }
   });
   const candidates = new Set([...tileCounts.keys(), ...lineCloses.keys(), ...(finisherPid ? [finisherPid] : [])]);
   let mvp = null;
@@ -1039,8 +1063,11 @@ function canEditTile(entry, name){
   if(!activeRound.teams) return true;
   const alreadyMarked = Boolean(entry.marks && entry.marks[name]);
   if(!alreadyMarked) return true;
-  if(activeRound.team_shared_edit) return true;
   const mark = entry.marked_by && entry.marked_by[name];
+  // Handicap tiles are permanently locked (item 2) — a freebie, not a real mark, so this
+  // overrides team_shared_edit entirely: no one, teammate or not, can ever undo it.
+  if(mark && mark.playerId === HANDICAP_PLAYER_ID) return false;
+  if(activeRound.team_shared_edit) return true;
   return Boolean(mark && mark.playerId === me.id);
 }
 function medalBadge(rank){
@@ -1630,18 +1657,19 @@ async function startTeamGridBingo(roundId, members){
   const entries = Object.keys(teams).map(teamKey => {
     const card = isAll ? fullCard() : makeRoundCard(round.grid_size);
     const marks = {};
+    const markedBy = {};
     // Proportional handicap for uneven teams (item 4): scales with how big a fraction of the
     // larger team the gap represents, not a flat 1-tile-per-player-missing count. Capped so the
-    // smaller team always has at least one real tile left to mark. No marked_by credit — a
-    // starting handicap, not a real kill, so MVP tile credit (item 6) naturally excludes it.
+    // smaller team always has at least one real tile left to mark. Tagged with the explicit
+    // HANDICAP_PLAYER_ID sentinel (item 1) — a freebie, not a real kill, so it's excluded from
+    // scoring (teamScoringInputs), permanently locked (canEditTile), and invisible to MVP.
     if(teamKey === smallerKey && playerGap > 0){
       const handicapTiles = Math.min(card.length - 1, Math.round(card.length * (playerGap / largerTeamSize)));
-      shuffle(card).slice(0, handicapTiles).forEach(name => { marks[name] = true; });
+      shuffle(card).slice(0, handicapTiles).forEach(name => { marks[name] = true; markedBy[name] = {playerId:HANDICAP_PLAYER_ID, at:0}; });
     }
-    const lines = isAll ? 0 : roundLines(card, marks, round.grid_size);
-    const tiles = tilesMarkedCount({marks});
+    const {tiles, lines} = teamScoringInputs(round, card, marks, markedBy);
     const points = computeRoundPoints(round, teamKey, tiles, lines, false); // never "full" at creation
-    return {round_id:roundId, player_id:teamKey, player_name:teamKey === "team-A" ? "Team A" : "Team B", card, marks, marked_by:{}, blocked_attempts:{}, lines_completed:lines, points, finished_at:null, version:0};
+    return {round_id:roundId, player_id:teamKey, player_name:teamKey === "team-A" ? "Team A" : "Team B", card, marks, marked_by:markedBy, blocked_attempts:{}, lines_completed:lines, points, finished_at:null, version:0};
   });
   await Store.createRound(round, entries);
 }
@@ -1717,8 +1745,9 @@ async function toggleRoundCard(name){
 
     const marks = {...(base.marks || {})};
     marks[name] = intendedMark;
-    // marked_by is team-mode-only bookkeeping (item 3): who marked/unmarked each tile and when.
-    // Never read by scoring/completion below — those keep reading the plain marks boolean map.
+    // marked_by is team-mode bookkeeping: who marked/unmarked each tile and when. full/finish
+    // detection below still reads the plain marks boolean map unchanged, but for team entries the
+    // scoring tiles/lines (below) now read marked_by too, to exclude handicap pre-marks.
     const markedBy = {...(base.marked_by || {})};
     if(activeRound.teams){
       if(intendedMark) markedBy[name] = {playerId:me.id, at:Date.now()};
@@ -1726,9 +1755,14 @@ async function toggleRoundCard(name){
     }
     const isAll = activeRound.layout === "all";
     const size = Number(activeRound.grid_size);
-    const lines = isAll ? 0 : roundLines(base.card, marks, size); // no line concept for the 43-item "All" layout
-    const full = roundIsClear(base.card, marks);
-    const tiles = tilesMarkedCount({marks});
+    const full = roundIsClear(base.card, marks); // unaffected by handicap mix (item 5) — a full clear is a full clear
+    let tiles, lines;
+    if(activeRound.teams){
+      ({tiles, lines} = teamScoringInputs(activeRound, base.card, marks, markedBy));
+    } else {
+      lines = isAll ? 0 : roundLines(base.card, marks, size); // no line concept for the 43-item "All" layout
+      tiles = tilesMarkedCount({marks});
+    }
     const points = computeRoundPoints(activeRound, base.player_id, tiles, lines, full);
     const justFinished = full && !base.finished_at;
     const finishedAt = justFinished ? Date.now() : (base.finished_at || null);
@@ -1788,6 +1822,11 @@ function attemptToggleRoundCard(name){
   if(!entry || entry.finished_at || activeRound.ended_at) return;
   if(!canEditTile(entry, name)){
     const marker = entry.marked_by && entry.marked_by[name];
+    if(marker && marker.playerId === HANDICAP_PLAYER_ID){
+      // No real owner to name or notify here — just explain why it's locked (item 2).
+      showToast("This tile is a starting handicap and can't be unmarked");
+      return;
+    }
     showToast(`Only ${marker ? teamMemberName(marker.playerId) : "the teammate who marked it"} can unmark this tile`);
     // Log the blocked attempt (item 5) so the tile's owner gets told on their next sync — this is
     // non-critical bookkeeping, so it's a plain unconditional save, no version-retry involved.
