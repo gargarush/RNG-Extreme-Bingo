@@ -46,6 +46,8 @@ create table if not exists round_entries (
   primary key (round_id, player_id)
 );
 alter table round_entries add column if not exists marked_by jsonb not null default '{}'::jsonb;
+alter table round_entries add column if not exists version int not null default 0;
+alter table round_entries add column if not exists blocked_attempts jsonb not null default '{}'::jsonb;
 
 alter table round_entries enable row level security;
 drop policy if exists "read" on round_entries;
