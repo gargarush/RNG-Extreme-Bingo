@@ -905,8 +905,10 @@ function roundSizeLabel(round){
   return round.layout === "all" ? "All" : `${round.grid_size}x${round.grid_size}`;
 }
 function roundModeLabel(round, short){
-  if(round.teams) return short ? "Team" : "Team card";
   const isShared = round.card_mode === "shared";
+  // Team rounds can now differ in card mode just like solo ones (item 3), so this can no longer
+  // say a flat "Team card" regardless — that would misreport a "different card per team" round.
+  if(round.teams) return short ? "Team" : (isShared ? "Team, same card" : "Team, own cards");
   return short ? (isShared ? "Shared" : "Individual") : (isShared ? "Shared card" : "Individual cards");
 }
 // Team mode: round_entries.player_id is "team-A"/"team-B", one entry per TEAM (item 2). Every
@@ -1043,10 +1045,9 @@ function computeTeamMVP(entry, round){
 function playerEntryForBoard(id){ return roundEntries.find(entry => entry.player_id === playerIdForBoard(id)); }
 function canViewRoundEntry(entry){
   if(!activeRound || !entry) return false;
+  // myEntryId() already resolves to "my" team's key in a team round, so this and everything below
+  // already works identically for solo and team rounds — no team-specific branch needed (item 4).
   if(entry.player_id === myEntryId()) return true;
-  // Team rounds: the opposing team's card is never viewable while the round is live — same as
-  // today's default "hidden" individual behavior, no visibility options to check (item 7).
-  if(activeRound.teams) return Boolean(activeRound.ended_at);
   if(activeRound.card_mode !== "individual") return true; // shared: identical card, nothing to hide
   if(activeRound.ended_at) return true;
   const visibility = activeRound.card_visibility || "hidden";
@@ -1579,17 +1580,20 @@ function buildGridBingoConfig(){
   buildBingoOptions("gridSizeOptions", [{label:"3x3",value:3},{label:"4x4",value:4},{label:"5x5",value:5},{label:"All",value:"all"}], gridBingoConfig.gridSize, value => { gridBingoConfig.gridSize = value; buildGridBingoConfig(); });
   const isAllConfig = gridBingoConfig.gridSize === "all";
   // "All" always behaves like Free Play — one shared view, everyone visible to everyone — so
-  // there's nothing to configure here; card_mode/card_visibility get forced in startGridBingo().
-  // Team rounds (>2 members) skip card mode/visibility entirely too — every team round is one
-  // shared card per team, and the opposing team's card is always hidden, so there's nothing to
-  // pick there either (item 1).
-  document.getElementById("cardModeRow").style.display = (isAllConfig || isTeamMode) ? "none" : "";
-  document.getElementById("cardVisibilityRow").style.display = (!isAllConfig && !isTeamMode && gridBingoConfig.cardMode === "individual") ? "" : "none";
+  // there's nothing to configure here; card_mode/card_visibility get forced in startGridBingo()
+  // (and in startTeamGridBingo() for team rounds) regardless of team vs solo — that's the one
+  // case that stays forced. Card mode/visibility are otherwise available in team mode too now,
+  // reusing this exact same config UI (item 1) — just relabeled below for team context (item 2).
+  document.getElementById("cardModeRow").style.display = isAllConfig ? "none" : "";
+  document.getElementById("cardVisibilityRow").style.display = (!isAllConfig && gridBingoConfig.cardMode === "individual") ? "" : "none";
   document.getElementById("teamFormationRow").style.display = isTeamMode ? "" : "none";
   document.getElementById("teamSharedEditRow").style.display = isTeamMode ? "" : "none";
   document.getElementById("teamAssignBox").classList.toggle("show", isTeamMode && gridBingoConfig.teamFormation === "manual");
-  if(!isAllConfig && !isTeamMode){
-    buildBingoOptions("cardModeOptions", [{label:"Same card for everyone",value:"shared"},{label:"Everyone gets their own card",value:"individual"}], gridBingoConfig.cardMode, value => { gridBingoConfig.cardMode = value; buildGridBingoConfig(); });
+  if(!isAllConfig){
+    const cardModeOptions = isTeamMode
+      ? [{label:"Same card for both teams",value:"shared"},{label:"Different card per team",value:"individual"}]
+      : [{label:"Same card for everyone",value:"shared"},{label:"Everyone gets their own card",value:"individual"}];
+    buildBingoOptions("cardModeOptions", cardModeOptions, gridBingoConfig.cardMode, value => { gridBingoConfig.cardMode = value; buildGridBingoConfig(); });
     if(gridBingoConfig.cardMode === "individual"){
       buildBingoOptions("cardVisibilityOptions", [{label:"Hidden",value:"hidden"},{label:"Fully visible",value:"visible"},{label:"Reveal as they mark",value:"finish"}], gridBingoConfig.cardVisibility, value => { gridBingoConfig.cardVisibility = value; buildGridBingoConfig(); });
     }
@@ -1636,16 +1640,25 @@ function buildTeams(members){
 async function startTeamGridBingo(roundId, members){
   const teams = buildTeams(members);
   const isAll = gridBingoConfig.gridSize === "all";
+  // Card mode/visibility now come from the same config the solo path uses (item 3) — "All" still
+  // forces shared+hidden regardless of whatever was left over from a previous square-round
+  // configuration, exactly like the solo path already does; that's the one case that doesn't change.
+  const cardMode = isAll ? "shared" : (gridBingoConfig.cardMode || "shared");
+  const cardVisibility = isAll ? "hidden" : (cardMode === "individual" ? (gridBingoConfig.cardVisibility || "hidden") : "hidden");
+  // Same pattern as the solo path's sharedCard: generated ONCE here (not per-entry) so both teams
+  // get an identical copy under "shared" mode — computing it inside the per-team loop would give
+  // each team its own independent shuffle even though the size matched, which isn't "shared".
+  const sharedCard = isAll ? fullCard() : (cardMode === "shared" ? makeRoundCard(gridBingoConfig.gridSize) : null);
   const round = {
     id:roundId,
     room_code:currentRoomCode(),
     created_at:Date.now(),
     grid_size:isAll ? null : gridBingoConfig.gridSize,
     layout:isAll ? "all" : "square",
-    card_mode:"shared",
+    card_mode:cardMode,
     scoring_mode:gridBingoConfig.scoringMode,
-    card_visibility:"hidden",
-    shared_card:null,
+    card_visibility:cardVisibility,
+    shared_card:sharedCard,
     winner_id:null,
     ended_at:null,
     started_by:me.name,
@@ -1659,7 +1672,10 @@ async function startTeamGridBingo(roundId, members){
   const largerTeamSize = Math.max(sizeA, sizeB);
   const smallerKey = sizeA === sizeB ? null : (sizeA < sizeB ? "team-A" : "team-B");
   const entries = Object.keys(teams).map(teamKey => {
-    const card = isAll ? fullCard() : makeRoundCard(round.grid_size);
+    // Handicap compatibility (item 5): each entry still gets its own independent marks/marked_by
+    // object below, even when card is an identical shared copy — the smaller team's handicap
+    // pre-marks only ever touch THEIR entry, never the other team's, regardless of card_mode.
+    const card = sharedCard ? sharedCard.slice() : (isAll ? fullCard() : makeRoundCard(round.grid_size));
     const marks = {};
     const markedBy = {};
     // Proportional handicap for uneven teams (item 4): scales with how big a fraction of the
