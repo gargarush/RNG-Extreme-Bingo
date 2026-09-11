@@ -260,6 +260,9 @@
   }
   .tile svg{width:var(--tile-icon);height:var(--tile-icon);color:var(--panel-line);}
   .tile .stamp{display:none;position:absolute;inset:0;align-items:center;justify-content:center;pointer-events:none;}
+  .tile .handicap-badge{position:absolute;top:6px;left:6px;width:15px;height:15px;color:var(--dim);pointer-events:none;z-index:1;}
+  .tile .handicap-badge svg{width:100%;height:100%;color:inherit;}
+  .tile.done .handicap-badge{color:var(--secondary);}
   .tile.done{background:#241531;border-color:var(--mark);box-shadow:0 0 0 1px var(--mark-soft),0 0 20px var(--mark-soft);}
   .tile.done .name{color:var(--ink);}
   .tile.done .weapon-image{filter:brightness(.72) saturate(.55);}
@@ -821,6 +824,7 @@ const UNKNOWN_TILE = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor"
 const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_CLOSED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/></svg>';
 const EXIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
+const HANDICAP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 20 5.5v6c0 5-3.5 8.5-8 10.5-4.5-2-8-5.5-8-10.5v-6L12 2Z"/></svg>';
 
 const ALL = Object.entries(DATA).flatMap(([cat,items]) => items.map(w => ({cat,name:w,key:cat+"::"+w})));
 const TOTAL = ALL.length;
@@ -1872,7 +1876,7 @@ function roundSettingsLine(round){
   const scoringLabel = round.scoring_mode === "points" ? "Points" : "Race";
   return [roundSizeLabel(round), roundModeLabel(round, false), visibilityLabel, scoringLabel].filter(Boolean).join(" · ");
 }
-function renderCategorySections(container, marksSource, editable, onToggle, masked, allowMarkAll){
+function renderCategorySections(container, marksSource, editable, onToggle, masked, allowMarkAll, markedBySource){
   container.innerHTML = "";
   Object.keys(DATA).forEach(cat => {
     const items = ALL.filter(i => i.cat === cat);
@@ -1893,7 +1897,7 @@ function renderCategorySections(container, marksSource, editable, onToggle, mask
     section.appendChild(head);
     const grid = document.createElement("div");
     grid.className = "grid";
-    items.forEach(i => grid.appendChild(makeTile({name:i.name, key:i.name}, {marks:marksSource || {}}, editable, editable ? () => onToggle(i.name) : undefined, masked)));
+    items.forEach(i => grid.appendChild(makeTile({name:i.name, key:i.name}, {marks:marksSource || {}, marked_by:markedBySource || {}}, editable, editable ? () => onToggle(i.name) : undefined, masked)));
     section.appendChild(grid);
     container.appendChild(section);
   });
@@ -1991,13 +1995,13 @@ function renderRoundBoard(){
   const masked = tileMaskedFor(entry);
   if(isAll){
     const container = document.createElement("div");
-    renderCategorySections(container, entry.marks || {}, editable, attemptToggleRoundCard, masked, editable);
+    renderCategorySections(container, entry.marks || {}, editable, attemptToggleRoundCard, masked, editable, entry.marked_by || {});
     document.getElementById("board").replaceChildren(container);
   } else {
     const grid = document.createElement("div");
     grid.className = "grid bingo-grid";
     grid.style.setProperty("--bingo-size", size);
-    entry.card.forEach(name => grid.appendChild(makeTile({name,key:name}, {marks:entry.marks || {}}, editable, editable ? () => attemptToggleRoundCard(name) : undefined, masked)));
+    entry.card.forEach(name => grid.appendChild(makeTile({name,key:name}, {marks:entry.marks || {}, marked_by:entry.marked_by || {}}, editable, editable ? () => attemptToggleRoundCard(name) : undefined, masked)));
     document.getElementById("board").replaceChildren(grid);
   }
 }
@@ -2071,6 +2075,10 @@ function renderRoster(){
 
 function makeTile(item, board, editable, onToggle, masked){
   const done = !!(board.marks && board.marks[item.key]);
+  // Handicap tiles (item: visual indicator) are already permanently locked via canEditTile() —
+  // this is purely cosmetic, so a real player's tile never looks any different than before.
+  const mark = board.marked_by && board.marked_by[item.key];
+  const isHandicap = Boolean(mark && mark.playerId === HANDICAP_PLAYER_ID);
   const tile = document.createElement("button");
   tile.type = "button";
   tile.disabled = !editable;
@@ -2082,7 +2090,8 @@ function makeTile(item, board, editable, onToggle, masked){
   } else {
     tile.className = "tile" + (done ? " done" : "");
     tile.innerHTML = `<img class="weapon-image" src="weapons/${slug(item.name)}.png" alt="" draggable="false">` +
-      `<span class="stamp">${HITMARKER}</span><span class="name">${escapeHtml(item.name)}</span>`;
+      `<span class="stamp">${HITMARKER}</span><span class="name">${escapeHtml(item.name)}</span>` +
+      (isHandicap ? `<span class="handicap-badge" title="Starting handicap — can't be marked or unmarked">${HANDICAP_ICON}</span>` : "");
     const image = tile.querySelector(".weapon-image");
     image.onerror = function(){
       this.insertAdjacentHTML("afterend", BLANK);
