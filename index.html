@@ -155,6 +155,14 @@
   .bingo-config-actions{display:flex;justify-content:flex-end;gap:8px;}
   .bingo-config-actions button{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:8px;padding:8px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;}
   .bingo-config-actions button:hover{border-color:var(--mark);color:var(--ink);}
+  .bingo-config-actions button:disabled{opacity:.4;cursor:not-allowed;}
+  .bingo-config-actions button:disabled:hover{border-color:var(--panel-line);color:var(--dim);}
+  .checkbox-inline{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--dim);cursor:pointer;}
+  .checkbox-inline input{width:auto;margin:0;}
+  .team-assign{display:none;gap:6px;background:#1a1526;border:1px solid var(--panel-line);border-radius:8px;padding:10px;}
+  .team-assign.show{display:grid;}
+  .team-assign-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;}
+  .team-assign-row .nm{color:var(--ink);}
   .grid-bingo-status{display:none;background:var(--panel);border:1px solid var(--panel-line);border-left:3px solid var(--secondary);border-radius:9px;padding:10px 14px;margin:-8px 0 16px;color:var(--dim);font-size:13px;}
   .grid-bingo-status.show{display:block;}
   .grid-bingo-status strong{color:var(--ink);}
@@ -168,6 +176,8 @@
   .bingo-leaderboard .bingo-score .pts-main{font-size:15px;font-weight:800;color:var(--ink);}
   .bingo-leaderboard .bingo-score .lines-sub{font-size:11px;color:var(--dim);margin-left:6px;}
   .bingo-leaderboard .winner{border-color:var(--mark);}
+  .bingo-leaderboard .team-members{font-size:11px;color:var(--dim);margin-top:3px;}
+  .bingo-leaderboard .team-mvp{font-size:11px;color:var(--mark);margin-top:4px;font-weight:700;}
   .bingo-leaderboard .vis-icon{width:13px;height:13px;vertical-align:middle;margin-left:6px;color:var(--dim);}
   .bingo-leaderboard .vis-icon.open{color:var(--utility);}
   .rank-badge{display:inline-flex;vertical-align:middle;margin-left:6px;flex-shrink:0;}
@@ -417,6 +427,12 @@
     <div class="bingo-config-row"><label>Grid size</label><div class="bingo-options" id="gridSizeOptions"></div></div>
     <div class="bingo-config-row" id="cardModeRow"><label>Card mode</label><div class="bingo-options" id="cardModeOptions"></div></div>
     <div class="bingo-config-row" id="cardVisibilityRow"><label>Card visibility</label><div class="bingo-options" id="cardVisibilityOptions"></div></div>
+    <div class="bingo-config-row" id="teamFormationRow"><label>Teams</label><div class="bingo-options" id="teamFormationOptions"></div></div>
+    <div class="team-assign" id="teamAssignBox"></div>
+    <div class="bingo-config-row" id="teamSharedEditRow">
+      <label>Editing</label>
+      <label class="checkbox-inline"><input type="checkbox" id="teamSharedEditCheckbox"> Teammates can edit each other's marks</label>
+    </div>
     <div class="bingo-config-row"><label>Scoring</label><div class="bingo-options" id="scoringModeOptions"></div></div>
     <div class="bingo-config-actions"><button id="cancelGridBingoBtn" type="button">Cancel</button><button id="confirmGridBingoBtn" class="primary" type="button">Start Round</button></div>
   </div>
@@ -674,7 +690,7 @@ const Store = {
       const res = await fetch(`${REMOTE.url}/rest/v1/round_entries?round_id=eq.${encodeURIComponent(entry.round_id)}&player_id=eq.${encodeURIComponent(entry.player_id)}`, {
         method:"PATCH",
         headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=minimal"},
-        body:JSON.stringify({marks:entry.marks, lines_completed:entry.lines_completed, points:entry.points, finished_at:entry.finished_at || null})
+        body:JSON.stringify({marks:entry.marks, marked_by:entry.marked_by || {}, lines_completed:entry.lines_completed, points:entry.points, finished_at:entry.finished_at || null})
       });
       if(!res.ok) throw new Error("round entry save failed " + res.status);
       return;
@@ -790,7 +806,7 @@ let audioContext = null;
 let activeRound = null;
 let roundEntries = [];
 let roundViewingId = null;
-let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisibility:"hidden"};
+let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisibility:"hidden",teamFormation:"random",manualTeams:{},teamSharedEdit:false};
 let rosterBaseline = null;
 let roomLeaderboard = [];
 let roundHistory = [];
@@ -839,10 +855,27 @@ function roundSizeLabel(round){
   return round.layout === "all" ? "All" : `${round.grid_size}x${round.grid_size}`;
 }
 function roundModeLabel(round, short){
+  if(round.teams) return short ? "Team" : "Team card";
   const isShared = round.card_mode === "shared";
   return short ? (isShared ? "Shared" : "Individual") : (isShared ? "Shared card" : "Individual cards");
 }
-function currentRoundEntry(){ return roundEntries.find(entry => entry.player_id === me?.id) || null; }
+// Team mode: round_entries.player_id is "team-A"/"team-B", one entry per TEAM (item 2). Every
+// place that used to key off me.id to find "my" entry now resolves through myEntryId() instead,
+// so a team member reads/writes their team's shared entry rather than one keyed to themselves.
+function myTeamId(){
+  if(!activeRound || !activeRound.teams || !me) return null;
+  for(const teamKey of Object.keys(activeRound.teams)){
+    if((activeRound.teams[teamKey] || []).includes(me.id)) return teamKey;
+  }
+  return null;
+}
+function myEntryId(){ return myTeamId() || me?.id; }
+function teamMemberName(pid){
+  const boardEntry = Object.entries(boards).find(([bid]) => playerIdForBoard(bid) === pid);
+  if(boardEntry) return boardEntry[1].name;
+  return knownRoomPlayers().get(pid) || pid;
+}
+function currentRoundEntry(){ return roundEntries.find(entry => entry.player_id === myEntryId()) || null; }
 function roundLines(card, marks, size){
   let lines = 0;
   for(let row = 0; row < size; row++) if(card.slice(row * size, row * size + size).every(name => marks[name])) lines++;
@@ -860,10 +893,59 @@ function roundLines(card, marks, size){
   return lines;
 }
 function roundIsClear(card, marks){ return card.every(name => marks[name]); }
+// Team MVP (item 6): most tiles credited in marked_by wins; ties break on line-closes, then on
+// who marked the card's final tile. Handicap pre-marks have no marked_by entry, so they're
+// automatically excluded from all three — nothing to opt out of.
+function computeTeamMVP(entry, round){
+  const markedBy = entry.marked_by || {};
+  const tileCounts = new Map();
+  Object.values(markedBy).forEach(m => {
+    if(!m || !m.playerId) return;
+    tileCounts.set(m.playerId, (tileCounts.get(m.playerId) || 0) + 1);
+  });
+  const lineCloses = new Map();
+  if(round.layout !== "all"){
+    const size = Number(round.grid_size);
+    const card = entry.card;
+    const marks = entry.marks || {};
+    const lines = [];
+    for(let row = 0; row < size; row++) lines.push(card.slice(row * size, row * size + size));
+    for(let col = 0; col < size; col++) lines.push(Array.from({length:size}, (_, row) => card[row * size + col]));
+    lines.push(Array.from({length:size}, (_, i) => card[i * size + i]));
+    lines.push(Array.from({length:size}, (_, i) => card[i * size + (size - i - 1)]));
+    lines.forEach(line => {
+      if(!line.every(name => marks[name])) return;
+      let bestPid = null, bestAt = -Infinity;
+      line.forEach(name => {
+        const m = markedBy[name];
+        if(m && m.playerId && m.at > bestAt){ bestAt = m.at; bestPid = m.playerId; }
+      });
+      if(bestPid) lineCloses.set(bestPid, (lineCloses.get(bestPid) || 0) + 1);
+    });
+  }
+  let finisherPid = null, finisherAt = -Infinity;
+  Object.values(markedBy).forEach(m => {
+    if(m && m.playerId && m.at > finisherAt){ finisherAt = m.at; finisherPid = m.playerId; }
+  });
+  const candidates = new Set([...tileCounts.keys(), ...lineCloses.keys(), ...(finisherPid ? [finisherPid] : [])]);
+  let mvp = null;
+  candidates.forEach(pid => {
+    const stat = {pid, tiles:tileCounts.get(pid) || 0, lines:lineCloses.get(pid) || 0, finisher:pid === finisherPid ? 1 : 0};
+    if(!mvp || stat.tiles > mvp.tiles ||
+      (stat.tiles === mvp.tiles && stat.lines > mvp.lines) ||
+      (stat.tiles === mvp.tiles && stat.lines === mvp.lines && stat.finisher > mvp.finisher)){
+      mvp = stat;
+    }
+  });
+  return mvp ? teamMemberName(mvp.pid) : null;
+}
 function playerEntryForBoard(id){ return roundEntries.find(entry => entry.player_id === playerIdForBoard(id)); }
 function canViewRoundEntry(entry){
   if(!activeRound || !entry) return false;
-  if(entry.player_id === me.id) return true;
+  if(entry.player_id === myEntryId()) return true;
+  // Team rounds: the opposing team's card is never viewable while the round is live — same as
+  // today's default "hidden" individual behavior, no visibility options to check (item 7).
+  if(activeRound.teams) return Boolean(activeRound.ended_at);
   if(activeRound.card_mode !== "individual") return true; // shared: identical card, nothing to hide
   if(activeRound.ended_at) return true;
   const visibility = activeRound.card_visibility || "hidden";
@@ -872,10 +954,21 @@ function canViewRoundEntry(entry){
   return false;
 }
 function tileMaskedFor(entry){
-  return activeRound.card_mode === "individual" && !activeRound.ended_at && (activeRound.card_visibility || "hidden") === "finish" && entry.player_id !== me.id;
+  return activeRound.card_mode === "individual" && !activeRound.ended_at && (activeRound.card_visibility || "hidden") === "finish" && entry.player_id !== myEntryId();
 }
 function tilesMarkedCount(entry){
   return Object.values(entry?.marks || {}).filter(Boolean).length;
+}
+// Team tile permissions (item 3): marking an unmarked tile is always allowed for any teammate.
+// Unmarking one is only allowed with team_shared_edit on, or by whoever marked_by records as the
+// one who marked it. Solo/individual rounds have no teams, so this is always true for them.
+function canEditTile(entry, name){
+  if(!activeRound.teams) return true;
+  const alreadyMarked = Boolean(entry.marks && entry.marks[name]);
+  if(!alreadyMarked) return true;
+  if(activeRound.team_shared_edit) return true;
+  const mark = entry.marked_by && entry.marked_by[name];
+  return Boolean(mark && mark.playerId === me.id);
 }
 function medalBadge(rank){
   return `<span class="rank-badge medal-${rank}"><svg viewBox="0 0 20 26" width="15" height="19" aria-hidden="true">` +
@@ -940,11 +1033,13 @@ async function syncNow(){
       if(finished && finished.ended_at) activeRound = finished;
     }
     roundEntries = activeRound ? await Store.listRoundEntries(activeRound.id) : [];
-    if(activeRound && !activeRound.ended_at && !roundEntries.some(entry => entry.player_id === me.id)){
+    // Team rounds (item 2) always pre-create both team entries at round start — never auto-add a
+    // per-player entry for one, or every teammate's next sync would spawn a stray solo entry.
+    if(activeRound && !activeRound.ended_at && !activeRound.teams && !roundEntries.some(entry => entry.player_id === me.id)){
       const card = activeRound.layout === "all"
         ? fullCard()
         : makeRoundCard(Number(activeRound.grid_size), activeRound.card_mode === "shared" ? activeRound.shared_card : null);
-      await Store.addRoundEntry({round_id:activeRound.id, player_id:me.id, player_name:me.name, card, marks:{}, lines_completed:0, points:0, finished_at:null});
+      await Store.addRoundEntry({round_id:activeRound.id, player_id:me.id, player_name:me.name, card, marks:{}, marked_by:{}, lines_completed:0, points:0, finished_at:null});
       roundEntries = await Store.listRoundEntries(activeRound.id);
     }
     const nextRoundId = activeRound?.id || null;
@@ -990,7 +1085,7 @@ async function syncNow(){
         // Anyone else finishing their board, skipping the winner (they already got the 1st-place toast).
         if(sameRound && activeRound){
           roundEntries.forEach(item => {
-            if(item.player_id === me.id) return;
+            if(item.player_id === myEntryId()) return;
             const prevEntry = previousEntries.find(e => e.player_id === item.player_id);
             const justFinished = item.finished_at && !(prevEntry && prevEntry.finished_at);
             if(justFinished && item.player_id !== activeRound.winner_id){
@@ -1228,15 +1323,21 @@ function renderRoomLeaderboard(){
       const item = document.createElement("div");
       item.className = "round-history-item";
       let body;
+      // MVP (item 6): only meaningful for team rounds, computed from that entry's marked_by.
+      const mvpSuffix = e => {
+        if(!round.teams) return "";
+        const mvpName = computeTeamMVP(e, round);
+        return mvpName ? ` (MVP: ${escapeHtml(mvpName)})` : "";
+      };
       if(round.dnf){
         body = `<div class="rows"><span>Ended early — no points awarded</span></div>`;
       } else if(round.scoring_mode === "points"){
         const parts = entries.slice().sort((a,b) => (b.points || 0) - (a.points || 0))
-          .map(e => `<span>${escapeHtml(e.player_name)}: ${e.points || 0} pts</span>`);
+          .map(e => `<span>${escapeHtml(e.player_name)}: ${e.points || 0} pts${mvpSuffix(e)}</span>`);
         body = `<div class="rows">${parts.join("")}</div>`;
       } else {
         const winner = entries.find(e => e.player_id === round.winner_id);
-        body = `<div class="rows"><span>${winner ? escapeHtml(winner.player_name) + " won" : "No winner"}</span></div>`;
+        body = `<div class="rows"><span>${winner ? escapeHtml(winner.player_name) + " won" + mvpSuffix(winner) : "No winner"}</span></div>`;
       }
       item.innerHTML = `<div class="settings">${escapeHtml(roundSettingsLine(round))}</div>${body}`;
       historyBox.appendChild(item);
@@ -1282,29 +1383,149 @@ function buildBingoOptions(id, options, selected, onChange){
     box.appendChild(button);
   });
 }
+// Team mode kicks in automatically once the room has more than 2 members — no manual toggle,
+// just a different config panel shape (item 1). Everything below TEAM_SIZE_THRESHOLD stays the
+// untouched solo/individual config that already existed.
+const TEAM_SIZE_THRESHOLD = 2;
+function isTeamRoomSize(members){ return members.length > TEAM_SIZE_THRESHOLD; }
+
+function buildTeamAssignRows(members){
+  const box = document.getElementById("teamAssignBox");
+  box.innerHTML = "";
+  members.forEach(([id, board]) => {
+    const pid = playerIdForBoard(id);
+    const row = document.createElement("div");
+    row.className = "team-assign-row";
+    const opts = document.createElement("div");
+    opts.className = "bingo-options";
+    [["team-A","Team A"],["team-B","Team B"]].forEach(([value,label]) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = label;
+      btn.className = gridBingoConfig.manualTeams[pid] === value ? "on" : "";
+      btn.addEventListener("click", () => { gridBingoConfig.manualTeams[pid] = value; buildGridBingoConfig(); });
+      opts.appendChild(btn);
+    });
+    row.innerHTML = `<span class="nm">${escapeHtml(board.name)}</span>`;
+    row.appendChild(opts);
+    box.appendChild(row);
+  });
+}
+
+// Manual formation can't start until every present member has a team and both teams have at
+// least 1 player (item 1); random formation is always valid since it assigns everyone itself.
+function teamConfigValid(members){
+  if(!isTeamRoomSize(members)) return true;
+  if(gridBingoConfig.teamFormation !== "manual") return true;
+  const pids = members.map(([id]) => playerIdForBoard(id));
+  if(!pids.every(pid => gridBingoConfig.manualTeams[pid])) return false;
+  const teamACount = pids.filter(pid => gridBingoConfig.manualTeams[pid] === "team-A").length;
+  return teamACount >= 1 && teamACount < pids.length;
+}
+
 function buildGridBingoConfig(){
+  const members = Object.entries(boards);
+  const isTeamMode = isTeamRoomSize(members);
   buildBingoOptions("gridSizeOptions", [{label:"3x3",value:3},{label:"4x4",value:4},{label:"5x5",value:5},{label:"All",value:"all"}], gridBingoConfig.gridSize, value => { gridBingoConfig.gridSize = value; buildGridBingoConfig(); });
   const isAllConfig = gridBingoConfig.gridSize === "all";
   // "All" always behaves like Free Play — one shared view, everyone visible to everyone — so
   // there's nothing to configure here; card_mode/card_visibility get forced in startGridBingo().
-  document.getElementById("cardModeRow").style.display = isAllConfig ? "none" : "";
-  document.getElementById("cardVisibilityRow").style.display = (!isAllConfig && gridBingoConfig.cardMode === "individual") ? "" : "none";
-  if(!isAllConfig){
+  // Team rounds (>2 members) skip card mode/visibility entirely too — every team round is one
+  // shared card per team, and the opposing team's card is always hidden, so there's nothing to
+  // pick there either (item 1).
+  document.getElementById("cardModeRow").style.display = (isAllConfig || isTeamMode) ? "none" : "";
+  document.getElementById("cardVisibilityRow").style.display = (!isAllConfig && !isTeamMode && gridBingoConfig.cardMode === "individual") ? "" : "none";
+  document.getElementById("teamFormationRow").style.display = isTeamMode ? "" : "none";
+  document.getElementById("teamSharedEditRow").style.display = isTeamMode ? "" : "none";
+  document.getElementById("teamAssignBox").classList.toggle("show", isTeamMode && gridBingoConfig.teamFormation === "manual");
+  if(!isAllConfig && !isTeamMode){
     buildBingoOptions("cardModeOptions", [{label:"Same card for everyone",value:"shared"},{label:"Everyone gets their own card",value:"individual"}], gridBingoConfig.cardMode, value => { gridBingoConfig.cardMode = value; buildGridBingoConfig(); });
     if(gridBingoConfig.cardMode === "individual"){
       buildBingoOptions("cardVisibilityOptions", [{label:"Hidden",value:"hidden"},{label:"Fully visible",value:"visible"},{label:"Reveal as they mark",value:"finish"}], gridBingoConfig.cardVisibility, value => { gridBingoConfig.cardVisibility = value; buildGridBingoConfig(); });
     }
   }
+  if(isTeamMode){
+    buildBingoOptions("teamFormationOptions", [{label:"Random",value:"random"},{label:"Manual",value:"manual"}], gridBingoConfig.teamFormation, value => { gridBingoConfig.teamFormation = value; buildGridBingoConfig(); });
+    document.getElementById("teamSharedEditCheckbox").checked = Boolean(gridBingoConfig.teamSharedEdit);
+    if(gridBingoConfig.teamFormation === "manual") buildTeamAssignRows(members);
+  }
   buildBingoOptions("scoringModeOptions", [{label:"Race only (first full clear wins)",value:"race"},{label:"Points (lines + bonuses)",value:"points"}], gridBingoConfig.scoringMode, value => { gridBingoConfig.scoringMode = value; buildGridBingoConfig(); });
+  document.getElementById("confirmGridBingoBtn").disabled = !teamConfigValid(members);
 }
 
 function makeRoundEntry(playerId, playerName, card, roundId){
-  return {round_id:roundId, player_id:playerId, player_name:playerName, card, marks:{}, lines_completed:0, points:0, finished_at:null};
+  return {round_id:roundId, player_id:playerId, player_name:playerName, card, marks:{}, marked_by:{}, lines_completed:0, points:0, finished_at:null};
+}
+
+// Random split: shuffle everyone present, then divide as evenly as possible (item 1). Manual
+// split: read gridBingoConfig.manualTeams, filtered to members actually present right now.
+function buildTeams(members){
+  const pids = members.map(([id]) => playerIdForBoard(id));
+  if(gridBingoConfig.teamFormation === "manual"){
+    return {
+      "team-A": pids.filter(pid => gridBingoConfig.manualTeams[pid] === "team-A"),
+      "team-B": pids.filter(pid => gridBingoConfig.manualTeams[pid] === "team-B")
+    };
+  }
+  const shuffled = shuffle(pids);
+  const half = Math.ceil(shuffled.length / 2);
+  return {"team-A": shuffled.slice(0, half), "team-B": shuffled.slice(half)};
+}
+
+// Team mode (>2 room members): one round_entry per TEAM, not per player — round_entries.player_id
+// is "team-A"/"team-B" (item 2), so every existing scoring/completion/leaderboard function that
+// reads roundEntries keeps working unchanged, since it just sees two entrants, same shape as a
+// <=2-player solo round.
+async function startTeamGridBingo(roundId, members){
+  const teams = buildTeams(members);
+  const isAll = gridBingoConfig.gridSize === "all";
+  const round = {
+    id:roundId,
+    room_code:currentRoomCode(),
+    created_at:Date.now(),
+    grid_size:isAll ? null : gridBingoConfig.gridSize,
+    layout:isAll ? "all" : "square",
+    card_mode:"shared",
+    scoring_mode:gridBingoConfig.scoringMode,
+    card_visibility:"hidden",
+    shared_card:null,
+    winner_id:null,
+    ended_at:null,
+    started_by:me.name,
+    ended_by:null,
+    teams,
+    team_shared_edit:Boolean(gridBingoConfig.teamSharedEdit)
+  };
+  const sizeA = teams["team-A"].length, sizeB = teams["team-B"].length;
+  const diff = Math.abs(sizeA - sizeB);
+  const smallerKey = sizeA === sizeB ? null : (sizeA < sizeB ? "team-A" : "team-B");
+  const entries = Object.keys(teams).map(teamKey => {
+    const card = isAll ? fullCard() : makeRoundCard(round.grid_size);
+    const marks = {};
+    // Handicap for uneven teams (item 4): the smaller team starts with `diff` random tiles
+    // pre-marked, no marked_by credit — a starting handicap, not a real kill, so MVP tile credit
+    // (item 6) naturally excludes it since there's no marked_by entry to count.
+    if(teamKey === smallerKey && diff > 0){
+      shuffle(card).slice(0, diff).forEach(name => { marks[name] = true; });
+    }
+    const lines = isAll ? 0 : roundLines(card, marks, round.grid_size);
+    const tiles = tilesMarkedCount({marks});
+    const points = round.scoring_mode === "points" ? tiles * 10 + lines * 100 : 0;
+    return {round_id:roundId, player_id:teamKey, player_name:teamKey === "team-A" ? "Team A" : "Team B", card, marks, marked_by:{}, lines_completed:lines, points, finished_at:null};
+  });
+  await Store.createRound(round, entries);
 }
 
 async function startGridBingo(){
   const roundId = crypto.randomUUID ? crypto.randomUUID() : "round-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
   const members = Object.entries(boards);
+  if(isTeamRoomSize(members)){
+    await startTeamGridBingo(roundId, members);
+    await syncNow();
+    renderAll();
+    return;
+  }
+  // 2-or-fewer members: completely unchanged from before team mode existed.
   const isAll = gridBingoConfig.gridSize === "all";
   // "All" always uses one shared, fully-visible card (item 1) — force these regardless of
   // whatever card_mode/visibility was left over from a previous square-round configuration.
@@ -1352,6 +1573,13 @@ async function toggleRoundCard(name){
   const marks = {...(entry.marks || {})};
   const marked = !marks[name];
   marks[name] = marked;
+  // marked_by is team-mode-only bookkeeping (item 3): who marked/unmarked each tile and when.
+  // Never read by scoring/completion below — those keep reading the plain marks boolean map.
+  const markedBy = {...(entry.marked_by || {})};
+  if(activeRound.teams){
+    if(marked) markedBy[name] = {playerId:me.id, at:Date.now()};
+    else delete markedBy[name];
+  }
   const isAll = activeRound.layout === "all";
   const size = Number(activeRound.grid_size);
   const lines = isAll ? 0 : roundLines(entry.card, marks, size); // no line concept for the 43-item "All" layout
@@ -1366,16 +1594,19 @@ async function toggleRoundCard(name){
     const totalEntries = roundEntries.length;
     if(totalEntries <= 2){
       // 2-or-fewer-player rounds keep today's behavior: first finish ends the round immediately.
-      await Store.claimRound(activeRound.id, me.id, me.name);
+      // Team rounds always produce exactly 2 entries (one per team), so they always land here too
+      // (item 5) — entry.player_id is the team key ("team-A"/"team-B") for a team round, and
+      // just me.id (unchanged) for a solo round, since currentRoundEntry() already resolved it.
+      await Store.claimRound(activeRound.id, entry.player_id, me.name);
     } else {
       // claimWinner still sets winner_id (drives the "got 1st place!" toast and medal styling),
       // it just no longer adds bonus points — finishing first is bragging rights only now.
-      await Store.claimWinner(activeRound.id, me.id);
-      const finishedElsewhere = roundEntries.filter(e => e.player_id !== me.id && e.finished_at).length;
+      await Store.claimWinner(activeRound.id, entry.player_id);
+      const finishedElsewhere = roundEntries.filter(e => e.player_id !== entry.player_id && e.finished_at).length;
       if(finishedElsewhere + 1 >= totalEntries - 1) shouldEndNow = true;
     }
   }
-  const next = {...entry, marks, lines_completed:lines, points, finished_at:finishedAt};
+  const next = {...entry, marks, marked_by:markedBy, lines_completed:lines, points, finished_at:finishedAt};
   await Store.saveRoundEntry(next);
   if(shouldEndNow){
     // An unhandled throw here previously stopped syncNow()/renderAll() below from ever running,
@@ -1403,6 +1634,11 @@ function showFinishConfirm(message, onConfirm){
 function attemptToggleRoundCard(name){
   const entry = currentRoundEntry();
   if(!entry || entry.finished_at || activeRound.ended_at) return;
+  if(!canEditTile(entry, name)){
+    const marker = entry.marked_by && entry.marked_by[name];
+    showToast(`Only ${marker ? teamMemberName(marker.playerId) : "the teammate who marked it"} can unmark this tile`);
+    return;
+  }
   if(wouldCompleteEntry(entry, name)){
     showFinishConfirm(`Mark ${name} and finish your card? This can't be undone, and everyone else will be notified.`, () => toggleRoundCard(name));
   } else {
@@ -1472,10 +1708,10 @@ function renderRoundBoard(){
   const pointsMode = activeRound.scoring_mode === "points";
   const isAll = activeRound.layout === "all";
   const size = Number(activeRound.grid_size);
-  const viewed = (roundViewingId && roundViewingId !== me.id) ? roundEntries.find(e => e.player_id === roundViewingId) : null;
+  const viewed = (roundViewingId && roundViewingId !== myEntryId()) ? roundEntries.find(e => e.player_id === roundViewingId) : null;
   const entry = (viewed && canViewRoundEntry(viewed)) ? viewed : own;
-  const editable = entry.player_id === me.id && !activeRound.ended_at && !entry.finished_at;
-  document.getElementById("viewingBanner").classList.toggle("show", entry.player_id !== me.id);
+  const editable = entry.player_id === myEntryId() && !activeRound.ended_at && !entry.finished_at;
+  document.getElementById("viewingBanner").classList.toggle("show", entry.player_id !== myEntryId());
   document.getElementById("viewingName").textContent = entry.player_name;
   document.getElementById("resetBtn").style.display = "none";
   document.getElementById("leaveBtn").style.display = "none";
@@ -1512,22 +1748,28 @@ function renderRoundBoard(){
   });
   sorted.forEach(item => {
     const viewable = canViewRoundEntry(item);
-    const locked = item.player_id !== me.id && !viewable;
+    const locked = item.player_id !== myEntryId() && !viewable;
     const card = document.createElement("div");
     card.className = "player" + (activeRound.winner_id === item.player_id ? " winner" : "") + (entry.player_id === item.player_id ? " viewing" : "") + (locked ? " locked" : "");
     const r = ranks.get(item.player_id);
     const badge = r <= 3 ? medalBadge(r) : "";
-    const showIcon = scoped ? item.player_id !== me.id : true;
+    const showIcon = scoped ? item.player_id !== myEntryId() : true;
     const visIcon = showIcon ? `<span class="vis-icon${viewable ? " open" : ""}" title="${viewable ? "You can view this card" : "Hidden from you"}">${viewable ? EYE_OPEN : EYE_CLOSED}</span>` : "";
     const tiles = tilesMarkedCount(item);
     const progressText = isAll ? `${tiles} tiles` : `${item.lines_completed || 0} lines · ${tiles} tiles`;
     const score = pointsMode
       ? `<span class="pts-main">${item.points || 0} pts</span><span class="lines-sub">${progressText}</span>`
       : progressText;
-    const inner = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}${badge}${visIcon}</span></div><div class="bingo-score">${score}</div>`;
+    // Team rounds show each team's members under the team name (item 7) instead of one row per
+    // individual — round.teams[item.player_id] is the member id list for this team's entry.
+    const members = activeRound.teams && activeRound.teams[item.player_id];
+    const membersLine = members ? `<div class="team-members">${members.map(pid => escapeHtml(teamMemberName(pid))).join(", ")}</div>` : "";
+    const mvpName = (members && activeRound.ended_at) ? computeTeamMVP(item, activeRound) : null;
+    const mvpLine = mvpName ? `<div class="team-mvp">MVP: ${escapeHtml(mvpName)}</div>` : "";
+    const inner = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}${badge}${visIcon}</span></div>${membersLine}<div class="bingo-score">${score}</div>${mvpLine}`;
     if(viewable){
       card.innerHTML = `<button type="button" class="open">${inner}</button>`;
-      card.querySelector(".open").addEventListener("click", () => { roundViewingId = item.player_id === me.id ? null : item.player_id; renderAll(); });
+      card.querySelector(".open").addEventListener("click", () => { roundViewingId = item.player_id === myEntryId() ? null : item.player_id; renderAll(); });
     } else {
       card.innerHTML = inner;
     }
@@ -1540,7 +1782,8 @@ function renderRoundBoard(){
   const settingsLine = roundSettingsLine(activeRound);
   let resultLine;
   if(activeRound.winner_id){
-    resultLine = activeRound.winner_id === me.id ? "<strong>You won!</strong>" : `<strong>${escapeHtml((roundEntries.find(item => item.player_id === activeRound.winner_id) || {}).player_name || "A player")} won this round</strong>`;
+    const wonPersonally = activeRound.winner_id === myEntryId();
+    resultLine = wonPersonally ? `<strong>${activeRound.teams ? "Your team won!" : "You won!"}</strong>` : `<strong>${escapeHtml((roundEntries.find(item => item.player_id === activeRound.winner_id) || {}).player_name || "A player")} won this round</strong>`;
   } else if(activeRound.ended_at){
     resultLine = "<strong>Round ended</strong>";
   } else {
@@ -1867,6 +2110,9 @@ document.getElementById("cancelGridBingoBtn").addEventListener("click", () => {
 document.getElementById("confirmGridBingoBtn").addEventListener("click", async () => {
   document.getElementById("gridBingoConfig").dataset.open = "false";
   await startGridBingo();
+});
+document.getElementById("teamSharedEditCheckbox").addEventListener("change", e => {
+  gridBingoConfig.teamSharedEdit = e.target.checked;
 });
 document.getElementById("muteBtn").addEventListener("click", async () => {
   me.muted = !me.muted;

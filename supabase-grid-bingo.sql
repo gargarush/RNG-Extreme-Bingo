@@ -23,6 +23,8 @@ alter table rounds add column if not exists started_by text;
 alter table rounds add column if not exists ended_by text;
 alter table rounds add column if not exists layout text not null default 'square';
 alter table rounds add column if not exists dnf boolean not null default false;
+alter table rounds add column if not exists teams jsonb;
+alter table rounds add column if not exists team_shared_edit boolean not null default false;
 
 alter table rounds enable row level security;
 drop policy if exists "read" on rounds;
@@ -43,6 +45,7 @@ create table if not exists round_entries (
   finished_at bigint,
   primary key (round_id, player_id)
 );
+alter table round_entries add column if not exists marked_by jsonb not null default '{}'::jsonb;
 
 alter table round_entries enable row level security;
 drop policy if exists "read" on round_entries;
