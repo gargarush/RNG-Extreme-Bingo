@@ -479,6 +479,7 @@
       <button id="authSubmitBtn" type="submit">Log in</button>
     </form>
     <button id="authToggleModeBtn" class="auth-toggle-btn" type="button">Need an account? Sign up</button>
+    <button id="authGuestBtn" class="auth-toggle-btn" type="button">Continue as Guest</button>
   </div>
 </div>
 
@@ -490,12 +491,24 @@
     <div class="err" id="settingsDisplayNameErr"></div>
     <button id="saveDisplayNameBtn" type="button">Save display name</button>
 
-    <p class="settings-label">Change password</p>
-    <input id="settingsCurrentPassword" type="password" placeholder="Current password" autocomplete="current-password">
-    <input id="settingsNewPassword" type="password" placeholder="New password" autocomplete="new-password">
-    <input id="settingsConfirmPassword" type="password" placeholder="Confirm new password" autocomplete="new-password">
-    <div class="err" id="settingsPasswordErr"></div>
-    <button id="changePasswordBtn" type="button">Change password</button>
+    <div id="settingsPasswordSection">
+      <p class="settings-label">Change password</p>
+      <input id="settingsCurrentPassword" type="password" placeholder="Current password" autocomplete="current-password">
+      <input id="settingsNewPassword" type="password" placeholder="New password" autocomplete="new-password">
+      <input id="settingsConfirmPassword" type="password" placeholder="Confirm new password" autocomplete="new-password">
+      <div class="err" id="settingsPasswordErr"></div>
+      <button id="changePasswordBtn" type="button">Change password</button>
+    </div>
+
+    <div id="settingsUpgradeSection">
+      <p class="settings-label">Create a permanent account</p>
+      <p>You're playing as a guest — sign up to keep your history and log back in later.</p>
+      <input id="upgradeUsername" type="text" placeholder="Username" maxlength="20" autocomplete="username">
+      <input id="upgradePassword" type="password" placeholder="Password" autocomplete="new-password">
+      <input id="upgradeConfirmPassword" type="password" placeholder="Confirm password" autocomplete="new-password">
+      <div class="err" id="settingsUpgradeErr"></div>
+      <button id="upgradeAccountBtn" type="button">Create account</button>
+    </div>
 
     <button id="closeSettingsBtn" class="auth-toggle-btn" type="button">Close</button>
   </div>
@@ -2590,16 +2603,26 @@ async function createRoomFlow(){
 
 /* ============================ auth ============================ */
 let authMode = "login";
+// Guest is a third mode alongside login/signup (item 1) — same form, just username+password
+// hidden and display name shown, same as signup's own display-name row.
 function renderAuthMode(){
   const isSignup = authMode === "signup";
-  document.getElementById("authTitle").textContent = isSignup ? "Create an account" : "Log in";
-  document.getElementById("authDisplayNameRow").style.display = isSignup ? "" : "none";
-  document.getElementById("authSubmitBtn").textContent = isSignup ? "Sign up" : "Log in";
-  document.getElementById("authToggleModeBtn").textContent = isSignup ? "Already have an account? Log in" : "Need an account? Sign up";
+  const isGuest = authMode === "guest";
+  document.getElementById("authTitle").textContent = isGuest ? "Continue as guest" : (isSignup ? "Create an account" : "Log in");
+  document.getElementById("authUsername").style.display = isGuest ? "none" : "";
+  document.getElementById("authPassword").style.display = isGuest ? "none" : "";
+  document.getElementById("authDisplayNameRow").style.display = (isSignup || isGuest) ? "" : "none";
+  document.getElementById("authSubmitBtn").textContent = isGuest ? "Continue as Guest" : (isSignup ? "Sign up" : "Log in");
+  document.getElementById("authToggleModeBtn").textContent = isGuest ? "Have an account? Log in" : (isSignup ? "Already have an account? Log in" : "Need an account? Sign up");
+  document.getElementById("authGuestBtn").style.display = isGuest ? "none" : "";
   document.getElementById("authErr").classList.remove("show");
 }
 document.getElementById("authToggleModeBtn").addEventListener("click", () => {
-  authMode = authMode === "signup" ? "login" : "signup";
+  authMode = authMode === "login" ? "signup" : "login";
+  renderAuthMode();
+});
+document.getElementById("authGuestBtn").addEventListener("click", () => {
+  authMode = "guest";
   renderAuthMode();
 });
 document.getElementById("authForm").addEventListener("submit", async e => {
@@ -2609,6 +2632,26 @@ document.getElementById("authForm").addEventListener("submit", async e => {
 
 async function submitAuth(){
   document.getElementById("authErr").classList.remove("show");
+  if(authMode === "guest"){
+    const displayName = document.getElementById("authDisplayName").value.trim();
+    if(!displayName){ setJoinError("Enter a display name."); return; }
+    const submitBtn = document.getElementById("authSubmitBtn");
+    submitBtn.disabled = true;
+    try{
+      const {data, error} = await sbClient.auth.signInAnonymously();
+      if(error){ setJoinError("Couldn't continue as guest — try again."); return; }
+      try{
+        await Store.createProfile({id:data.user.id, username:null, display_name:displayName, accent:"cyan", tile_size:"medium", muted:false, page_zoom:100, is_anonymous:true, created_at:Date.now()});
+      }catch(e){
+        setJoinError("Guest setup failed — try again.");
+        return;
+      }
+      await onLoggedIn(data.session);
+    } finally {
+      submitBtn.disabled = false;
+    }
+    return;
+  }
   const username = document.getElementById("authUsername").value.trim().toLowerCase();
   const password = document.getElementById("authPassword").value;
   if(!/^[a-z0-9_]{3,20}$/.test(username)){ setJoinError("Username: 3-20 letters, numbers, or underscores."); return; }
@@ -2683,6 +2726,12 @@ function showSettingsError(targetId, message){
   el.textContent = message;
   el.classList.add("show");
 }
+// Guests have no password to change yet (item 2) — the "Change password" section is swapped for
+// the upgrade-to-real-account section from item 3 instead, rather than shown disabled.
+function renderSettingsGuestSections(){
+  document.getElementById("settingsPasswordSection").style.display = me.isAnonymous ? "none" : "";
+  document.getElementById("settingsUpgradeSection").style.display = me.isAnonymous ? "" : "none";
+}
 document.getElementById("settingsBtn").addEventListener("click", () => {
   document.getElementById("settingsDisplayName").value = me.name;
   document.getElementById("settingsDisplayNameErr").classList.remove("show");
@@ -2690,6 +2739,11 @@ document.getElementById("settingsBtn").addEventListener("click", () => {
   document.getElementById("settingsCurrentPassword").value = "";
   document.getElementById("settingsNewPassword").value = "";
   document.getElementById("settingsConfirmPassword").value = "";
+  document.getElementById("settingsUpgradeErr").classList.remove("show");
+  document.getElementById("upgradeUsername").value = "";
+  document.getElementById("upgradePassword").value = "";
+  document.getElementById("upgradeConfirmPassword").value = "";
+  renderSettingsGuestSections();
   document.getElementById("settingsModal").classList.add("show");
 });
 document.getElementById("closeSettingsBtn").addEventListener("click", () => {
@@ -2745,6 +2799,45 @@ document.getElementById("changePasswordBtn").addEventListener("click", async () 
     btn.disabled = false;
   }
 });
+// Converts the SAME anonymous auth user into a permanent one (item 3) — same uid, so every
+// round/board row already tied to them stays correctly linked. Never creates a new profile row,
+// only PATCHes the existing one.
+document.getElementById("upgradeAccountBtn").addEventListener("click", async () => {
+  document.getElementById("settingsUpgradeErr").classList.remove("show");
+  const username = document.getElementById("upgradeUsername").value.trim().toLowerCase();
+  const password = document.getElementById("upgradePassword").value;
+  const confirm = document.getElementById("upgradeConfirmPassword").value;
+  if(!/^[a-z0-9_]{3,20}$/.test(username)){ showSettingsError("settingsUpgradeErr", "Username: 3-20 letters, numbers, or underscores."); return; }
+  if(!password){ showSettingsError("settingsUpgradeErr", "Enter a password."); return; }
+  if(password !== confirm){ showSettingsError("settingsUpgradeErr", "Passwords don't match."); return; }
+  const btn = document.getElementById("upgradeAccountBtn");
+  btn.disabled = true;
+  try{
+    const email = `${username}@rngbingo.local`;
+    const {error} = await sbClient.auth.updateUser({email, password});
+    if(error){
+      showSettingsError("settingsUpgradeErr", /already registered|already exists/i.test(error.message) ? "That username is taken." : "Couldn't create account — try again.");
+      return;
+    }
+    try{
+      await Store.saveProfile(me.id, {username, is_anonymous:false});
+    }catch(e){
+      showSettingsError("settingsUpgradeErr", "Account created, but profile update failed — try refreshing.");
+      return;
+    }
+    me.username = username;
+    me.isAnonymous = false;
+    document.getElementById("upgradeUsername").value = "";
+    document.getElementById("upgradePassword").value = "";
+    document.getElementById("upgradeConfirmPassword").value = "";
+    renderSettingsGuestSections();
+    showToast("Account created — you're no longer a guest");
+  }catch(e){
+    showSettingsError("settingsUpgradeErr", "Couldn't create account — try again.");
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 async function onLoggedIn(newSession){
   session = newSession;
@@ -2758,6 +2851,7 @@ async function onLoggedIn(newSession){
     tileSize:profile?.tile_size || "medium",
     muted:Boolean(profile?.muted),
     pageZoom:Number(profile?.page_zoom) || 100,
+    isAnonymous:Boolean(profile?.is_anonymous),
     roomCode:null
   };
   document.getElementById("authModal").classList.remove("show");
