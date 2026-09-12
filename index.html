@@ -223,6 +223,8 @@
   .modal-card .btn-row{display:flex;gap:10px;margin-top:4px;}
   .modal-card .btn-row button{width:auto;flex:1;}
   .modal-card .btn-row button.ghost{background:transparent;border:1px solid var(--panel-line);color:var(--dim);font-weight:600;}
+  .modal-card .btn-row button.danger{background:#ff4d5e;color:#180a0d;}
+  .modal-card button:disabled{opacity:.4;cursor:not-allowed;}
 
   .category{margin-bottom:34px;}
   .cat-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;}
@@ -294,7 +296,15 @@
   .auth-toggle-btn{width:100%;margin-top:14px;background:transparent;border:1px solid var(--panel-line);color:var(--dim);padding:10px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;}
   .auth-toggle-btn:hover{border-color:var(--mark);color:var(--ink);}
   .modal-card p.settings-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:18px 0 8px;}
-  .modal-card p.settings-label:first-of-type{margin-top:0;}
+  /* Only the very first settings-label (right under the modal's own h3) should sit flush — each
+     later one is the *first* p inside its own wrapper div (settingsPasswordSection etc.), so a
+     bare :first-of-type zeroed their top margin too and left sections nearly touching. */
+  .modal-card h3 + p.settings-label{margin-top:0;}
+  .danger-zone{margin-top:20px;padding:14px 16px;border:1px solid #5c1a24;background:rgba(180,30,50,.12);border-radius:10px;}
+  .danger-zone p.settings-label{color:#ff6b7d;margin-top:0;}
+  .danger-zone p{margin:0 0 12px;font-size:12.5px;}
+  .danger-btn{width:100%;background:transparent;border:1px solid #ff4d5e;color:#ff4d5e;padding:10px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+  .danger-btn:hover{background:rgba(255,77,94,.15);}
   .room-actions .leave-room{background:transparent;border:1px solid var(--panel-line);color:var(--dim);padding:10px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;}
   .room-actions .leave-room:hover{border-color:var(--mark);color:var(--ink);}
   .modal-card .err{color:var(--melee);font-size:12.5px;margin:-6px 0 12px;display:none;}
@@ -510,6 +520,12 @@
       <button id="upgradeAccountBtn" type="button">Create account</button>
     </div>
 
+    <div class="danger-zone">
+      <p class="settings-label">Danger Zone</p>
+      <p>Permanently delete your account and everything tied to it. This cannot be undone.</p>
+      <button id="deleteAccountBtn" type="button" class="danger-btn">Delete Account</button>
+    </div>
+
     <button id="closeSettingsBtn" class="auth-toggle-btn" type="button">Close</button>
   </div>
 </div>
@@ -520,6 +536,20 @@
     <p>Every round you've played, across every room.</p>
     <div class="round-history show" id="personalHistoryList"></div>
     <button id="closeHistoryBtn" class="auth-toggle-btn" type="button">Close</button>
+  </div>
+</div>
+
+<div class="modal" id="deleteAccountModal">
+  <div class="modal-card">
+    <h3>Delete your account?</h3>
+    <p>This permanently deletes your account and every round, board, and room membership tied to it. This cannot be undone.</p>
+    <p>Type <strong>DELETE</strong> below to confirm.</p>
+    <input id="deleteAccountConfirmInput" type="text" placeholder="DELETE" autocomplete="off">
+    <div class="err" id="deleteAccountErr"></div>
+    <div class="btn-row">
+      <button id="deleteAccountCancelBtn" class="ghost" type="button">Cancel</button>
+      <button id="deleteAccountConfirmBtn" class="danger" type="button" disabled>Delete Account</button>
+    </div>
   </div>
 </div>
 
@@ -2698,11 +2728,14 @@ async function submitAuth(){
   }
 }
 
-document.getElementById("logoutBtn").addEventListener("click", async () => {
+// Shared by a normal logout and a successful account deletion (item 3) — both end the session
+// and land back on the login screen the same way.
+async function signOutAndReload(){
   stopPolling();
   try{ await sbClient.auth.signOut(); }catch(e){ console.error(e); }
   location.reload();
-});
+}
+document.getElementById("logoutBtn").addEventListener("click", signOutAndReload);
 
 /* ============================ history ============================ */
 document.getElementById("historyBtn").addEventListener("click", async () => {
@@ -2783,9 +2816,10 @@ document.getElementById("changePasswordBtn").addEventListener("click", async () 
   try{
     const email = `${me.username}@rngbingo.local`;
     const verify = await sbClient.auth.signInWithPassword({email, password:current});
-    if(verify.error){ showSettingsError("settingsPasswordErr", "Current password is wrong."); return; }
+    if(verify.error){ console.error(verify.error); showSettingsError("settingsPasswordErr", "Current password is wrong."); return; }
     const update = await sbClient.auth.updateUser({password:next});
     if(update.error){
+      console.error(update.error);
       showSettingsError("settingsPasswordErr", "New password is too weak — try a longer or less common one.");
       return;
     }
@@ -2794,6 +2828,7 @@ document.getElementById("changePasswordBtn").addEventListener("click", async () 
     document.getElementById("settingsConfirmPassword").value = "";
     showToast("Password updated");
   }catch(e){
+    console.error(e);
     showSettingsError("settingsPasswordErr", "Couldn't update password — try again.");
   } finally {
     btn.disabled = false;
@@ -2816,12 +2851,18 @@ document.getElementById("upgradeAccountBtn").addEventListener("click", async () 
     const email = `${username}@rngbingo.local`;
     const {error} = await sbClient.auth.updateUser({email, password});
     if(error){
-      showSettingsError("settingsUpgradeErr", /already registered|already exists/i.test(error.message) ? "That username is taken." : "Couldn't create account — try again.");
+      console.error(error);
+      // Widened past a bare "already registered|already exists" (item 1) — updateUser's actual
+      // wording for a taken email doesn't always match that literal phrase.
+      const msg = (error.message || "").toLowerCase();
+      const usernameTaken = /already registered|already exists|taken/.test(msg) || (msg.includes("user") && msg.includes("exist"));
+      showSettingsError("settingsUpgradeErr", usernameTaken ? "That username is taken." : "Couldn't create account — try again.");
       return;
     }
     try{
       await Store.saveProfile(me.id, {username, is_anonymous:false});
     }catch(e){
+      console.error(e);
       showSettingsError("settingsUpgradeErr", "Account created, but profile update failed — try refreshing.");
       return;
     }
@@ -2833,8 +2874,44 @@ document.getElementById("upgradeAccountBtn").addEventListener("click", async () 
     renderSettingsGuestSections();
     showToast("Account created — you're no longer a guest");
   }catch(e){
+    console.error(e);
     showSettingsError("settingsUpgradeErr", "Couldn't create account — try again.");
   } finally {
+    btn.disabled = false;
+  }
+});
+
+/* ============================ delete account ============================ */
+// Shown for every account type, guests included (item 3) — typing the exact, case-sensitive
+// word "DELETE" is the only thing that enables the actual delete button.
+document.getElementById("deleteAccountBtn").addEventListener("click", () => {
+  document.getElementById("deleteAccountConfirmInput").value = "";
+  document.getElementById("deleteAccountConfirmBtn").disabled = true;
+  document.getElementById("deleteAccountErr").classList.remove("show");
+  document.getElementById("deleteAccountModal").classList.add("show");
+});
+document.getElementById("deleteAccountCancelBtn").addEventListener("click", () => {
+  document.getElementById("deleteAccountModal").classList.remove("show");
+});
+document.getElementById("deleteAccountConfirmInput").addEventListener("input", e => {
+  document.getElementById("deleteAccountConfirmBtn").disabled = e.target.value !== "DELETE";
+});
+document.getElementById("deleteAccountConfirmBtn").addEventListener("click", async () => {
+  document.getElementById("deleteAccountErr").classList.remove("show");
+  const btn = document.getElementById("deleteAccountConfirmBtn");
+  btn.disabled = true;
+  try{
+    const {error} = await sbClient.rpc("delete_own_account");
+    if(error){
+      console.error(error);
+      showSettingsError("deleteAccountErr", "Couldn't delete your account — try again.");
+      btn.disabled = false;
+      return;
+    }
+    await signOutAndReload();
+  }catch(e){
+    console.error(e);
+    showSettingsError("deleteAccountErr", "Couldn't delete your account — try again.");
     btn.disabled = false;
   }
 });
