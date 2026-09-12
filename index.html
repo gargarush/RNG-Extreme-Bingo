@@ -278,6 +278,8 @@
   .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(12,7,20,.9);z-index:30;padding:20px;}
   .modal.show{display:flex;}
   .modal-card{background:var(--panel);border:1px solid var(--panel-line);border-radius:16px;padding:32px;max-width:400px;width:100%;}
+  .modal-card.wide{max-width:560px;max-height:82vh;overflow-y:auto;}
+  .modal-card.wide .round-history{margin-top:0;}
   .modal-card h3{margin:0 0 8px;font-size:22px;font-weight:800;}
   .modal-card p{margin:0 0 20px;color:var(--dim);font-size:14px;line-height:1.5;}
   .modal-card input{
@@ -352,6 +354,7 @@
   <div class="account-bar" id="accountBar">
     <span>Logged in as <strong id="accountName"></strong></span>
     <div class="room-actions">
+      <button id="historyBtn" type="button">History</button>
       <button id="settingsBtn" type="button">Settings</button>
       <button id="logoutBtn" type="button">Log out</button>
     </div>
@@ -495,6 +498,15 @@
     <button id="changePasswordBtn" type="button">Change password</button>
 
     <button id="closeSettingsBtn" class="auth-toggle-btn" type="button">Close</button>
+  </div>
+</div>
+
+<div class="modal" id="historyModal">
+  <div class="modal-card wide">
+    <h3>Your Round History</h3>
+    <p>Every round you've played, across every room.</p>
+    <div class="round-history show" id="personalHistoryList"></div>
+    <button id="closeHistoryBtn" class="auth-toggle-btn" type="button">Close</button>
   </div>
 </div>
 
@@ -854,6 +866,51 @@ const Store = {
       return await res.json();
     }
     return [];
+  },
+  // Personal history (item 2): every direct/solo round_entries row for this player, across every
+  // room — not scoped to the current room like listEndedRounds(). Team rounds don't show up here
+  // since a team round's player_id is "team-A"/"team-B", never a real uid.
+  async listRoundEntriesForPlayer(playerId){
+    const res = await fetch(`${REMOTE.url}/rest/v1/round_entries?player_id=eq.${encodeURIComponent(playerId)}&select=*`, {
+      headers:authHeaders()
+    });
+    if(!res.ok) throw new Error("player round entries lookup failed " + res.status);
+    return await res.json();
+  },
+  // Every ended team round, from any room, any players — filtered client-side (item 2) for
+  // whether this player's uid is in round.teams, rather than a jsonb-containment query. Small
+  // dataset, friends-only app: this is the deliberately simple approach the task asked for.
+  async listEndedTeamRounds(){
+    const res = await fetch(`${REMOTE.url}/rest/v1/rounds?ended_at=not.is.null&teams=not.is.null&select=*`, {
+      headers:authHeaders()
+    });
+    if(!res.ok) throw new Error("team round history lookup failed " + res.status);
+    return await res.json();
+  },
+  async getRoundsByIds(roundIds){
+    if(!roundIds.length) return [];
+    const idList = roundIds.map(id => encodeURIComponent(id)).join(",");
+    const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=in.(${idList})&select=*`, {
+      headers:authHeaders()
+    });
+    if(!res.ok) throw new Error("rounds batch lookup failed " + res.status);
+    return await res.json();
+  },
+  // Resolves real names for team members (item 2) — a team round's round.teams array is real
+  // uuids, but they may belong to people who've never been in the CURRENT room, so boards/
+  // roomLeaderboard (what teamMemberName() reads) won't have them. One batch profiles lookup
+  // instead of a per-id round-trip.
+  async getProfilesByIds(ids){
+    if(!ids.length) return {};
+    const idList = ids.map(id => encodeURIComponent(id)).join(",");
+    const res = await fetch(`${REMOTE.url}/rest/v1/profiles?id=in.(${idList})&select=id,display_name,username`, {
+      headers:authHeaders()
+    });
+    if(!res.ok) throw new Error("profiles batch lookup failed " + res.status);
+    const rows = await res.json();
+    const out = {};
+    rows.forEach(p => { out[p.id] = p.display_name || p.username || "Player"; });
+    return out;
   }
 };
 
@@ -906,6 +963,8 @@ let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisib
 let rosterBaseline = null;
 let roomIsPublic = false;
 let publicRoomsList = [];
+let personalHistory = [];
+let personalHistoryNames = {};
 let roomLeaderboard = [];
 let roundHistory = [];
 // "<entryPlayerId>:<weaponName>" -> last-seen blocked_attempts timestamp (item 5), so a sync only
@@ -980,6 +1039,50 @@ function teamMemberName(pid){
   // this one to name live team members, and going through it here would recurse.
   const historical = roomLeaderboard.find(r => r.player_id === pid);
   return historical ? historical.player_name : pid;
+}
+// Personal history's room-agnostic counterpart to teamMemberName() (item 2) — a personal-history
+// team round can be from any room, not just the current one, so the profiles batch fetched by
+// loadPersonalHistory() is checked first; teamMemberName()'s room-scoped caches are still a
+// reasonable fallback (covers a team round from the room you're currently in).
+function personalHistoryName(pid){
+  return personalHistoryNames[pid] || teamMemberName(pid) || pid;
+}
+function myEntryInRound(round, entries){
+  if(round.teams){
+    const teamKey = Object.keys(round.teams).find(k => (round.teams[k] || []).includes(me.id));
+    return entries.find(e => e.player_id === teamKey) || null;
+  }
+  return entries.find(e => e.player_id === me.id) || null;
+}
+// Keep this simple (item 2): a direct round_entries lookup for solo/individual rounds, plus a
+// client-side filter over every ended team round for whether this player's uid is in round.teams
+// — no jsonb-containment query, no server-side join between the two. Small dataset either way.
+async function loadPersonalHistory(){
+  const [directEntries, teamRoundsAll] = await Promise.all([
+    Store.listRoundEntriesForPlayer(me.id),
+    Store.listEndedTeamRounds()
+  ]);
+  const myTeamRounds = teamRoundsAll.filter(r => Object.values(r.teams || {}).some(members => (members || []).includes(me.id)));
+  const roundIds = Array.from(new Set([...directEntries.map(e => e.round_id), ...myTeamRounds.map(r => r.id)]));
+  if(roundIds.length === 0){ personalHistoryNames = {}; return []; }
+  const [rounds, entries] = await Promise.all([
+    Store.getRoundsByIds(roundIds),
+    Store.listEntriesForRounds(roundIds)
+  ]);
+  const teamMemberIds = new Set();
+  myTeamRounds.forEach(r => Object.values(r.teams || {}).forEach(members => (members || []).forEach(pid => teamMemberIds.add(pid))));
+  personalHistoryNames = teamMemberIds.size ? await Store.getProfilesByIds(Array.from(teamMemberIds)) : {};
+  const entriesByRound = new Map();
+  entries.forEach(e => {
+    if(!entriesByRound.has(e.round_id)) entriesByRound.set(e.round_id, []);
+    entriesByRound.get(e.round_id).push(e);
+  });
+  // listRoundEntriesForPlayer() can surface a round that's still live (its entry is created at
+  // round start, well before ended_at is set) — not history yet, so it's filtered out here.
+  return rounds
+    .filter(round => round.ended_at)
+    .map(round => ({round, entries:entriesByRound.get(round.id) || []}))
+    .sort((a,b) => (b.round.ended_at || b.round.created_at || 0) - (a.round.ended_at || a.round.created_at || 0));
 }
 function currentRoundEntry(){ return roundEntries.find(entry => entry.player_id === myEntryId()) || null; }
 function roundLines(card, marks, size){
@@ -1374,7 +1477,7 @@ function stopPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer = null
 
 /* ============================ accent ============================ */
 function applyAccent(){
-  const a = ACCENTS.find(x => x.id === (me?.accent || "magenta")) || ACCENTS[0];
+  const a = ACCENTS.find(x => x.id === (me?.accent || "cyan")) || ACCENTS[0];
   document.documentElement.style.setProperty("--mark", a.hex);
   document.documentElement.style.setProperty("--mark-soft", a.soft);
 }
@@ -1576,6 +1679,55 @@ function renderRoomLeaderboard(){
   }
 }
 
+// Same round-history-item visual style as renderRoomLeaderboard()'s history list above, just
+// scoped to one person across every room instead of one room (item 2) — so each item also needs
+// its own date and room code, which the room-scoped version never had to show.
+function renderPersonalHistory(){
+  const list = document.getElementById("personalHistoryList");
+  if(personalHistory.length === 0){
+    list.innerHTML = '<div class="empty" style="padding:12px;">No rounds played yet.</div>';
+    return;
+  }
+  list.innerHTML = "";
+  personalHistory.forEach(({round, entries}) => {
+    const item = document.createElement("div");
+    item.className = "round-history-item";
+    const myEntry = myEntryInRound(round, entries);
+    // Team rounds (item: labeling) split into your own teammates ("With") and the opposing
+    // team ("vs"), both via round.teams — never the entry's own player_name, which for a team
+    // is just the literal "Team A"/"Team B" string. Solo/individual rounds have no teammate,
+    // only an opponent, so that line is "vs" instead of "With".
+    const matchSpans = [];
+    if(round.teams){
+      const myTeamKey = Object.keys(round.teams).find(k => (round.teams[k] || []).includes(me.id));
+      const otherTeamKey = Object.keys(round.teams).find(k => k !== myTeamKey);
+      const teammates = (round.teams[myTeamKey] || []).filter(pid => pid !== me.id).map(pid => personalHistoryName(pid));
+      const opponents = (round.teams[otherTeamKey] || []).map(pid => personalHistoryName(pid));
+      if(teammates.length) matchSpans.push(`<span>With: ${escapeHtml(teammates.join(", "))}</span>`);
+      if(opponents.length) matchSpans.push(`<span>vs: ${escapeHtml(opponents.join(", "))}</span>`);
+    } else {
+      const opponents = entries.filter(e => e !== myEntry).map(e => e.player_name);
+      if(opponents.length) matchSpans.push(`<span>vs: ${escapeHtml(opponents.join(", "))}</span>`);
+    }
+    if(matchSpans.length === 0) matchSpans.push('<span>Solo</span>');
+    const dateMs = round.ended_at || round.created_at;
+    const dateLabel = dateMs ? new Date(dateMs).toLocaleDateString(undefined, {month:"short", day:"numeric", year:"numeric"}) : "Unknown date";
+    let resultLabel;
+    if(round.dnf){
+      resultLabel = "Ended early";
+    } else if(round.scoring_mode === "points"){
+      resultLabel = `${myEntry?.points || 0} pts`;
+    } else if(!round.winner_id){
+      resultLabel = "No winner";
+    } else {
+      resultLabel = (myEntry && round.winner_id === myEntry.player_id) ? "You won" : "You lost";
+    }
+    item.innerHTML = `<div class="settings">${escapeHtml(dateLabel)} · Room ${escapeHtml(round.room_code)} · ${escapeHtml(roundSettingsLine(round))}</div>` +
+      `<div class="rows">${matchSpans.join("")}<span>${escapeHtml(resultLabel)}</span></div>`;
+    list.appendChild(item);
+  });
+}
+
 function renderContextBar(){
   const bar = document.getElementById("contextBar");
   const room = currentRoomCode();
@@ -1625,9 +1777,9 @@ function buildTeamAssignRows(members){
   box.innerHTML = "";
   members.forEach(([id, board]) => {
     const pid = id;
-    // This player's own accent (item 3), not the current viewer's — falls back to magenta the
+    // This player's own accent (item 3), not the current viewer's — falls back to cyan the
     // same way applyAccent() does when a board has no accent recorded yet.
-    const accent = ACCENTS.find(a => a.id === (board.accent || "magenta")) || ACCENTS[0];
+    const accent = ACCENTS.find(a => a.id === (board.accent || "cyan")) || ACCENTS[0];
     const row = document.createElement("div");
     row.className = "team-assign-row";
     const opts = document.createElement("div");
@@ -2487,7 +2639,7 @@ async function submitAuth(){
         newSession = signInResult.data.session;
       }
       try{
-        await Store.createProfile({id:uid, username, display_name:displayName, accent:"magenta", tile_size:"medium", muted:false, page_zoom:100, created_at:Date.now()});
+        await Store.createProfile({id:uid, username, display_name:displayName, accent:"cyan", tile_size:"medium", muted:false, page_zoom:100, created_at:Date.now()});
       }catch(e){
         setJoinError("Signup succeeded, but profile setup failed — try logging in.");
         return;
@@ -2507,6 +2659,22 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
   stopPolling();
   try{ await sbClient.auth.signOut(); }catch(e){ console.error(e); }
   location.reload();
+});
+
+/* ============================ history ============================ */
+document.getElementById("historyBtn").addEventListener("click", async () => {
+  document.getElementById("historyModal").classList.add("show");
+  document.getElementById("personalHistoryList").innerHTML = '<div class="empty" style="padding:12px;">Loading…</div>';
+  try{
+    personalHistory = await loadPersonalHistory();
+  }catch(e){
+    console.error("personal history load failed", e);
+    personalHistory = [];
+  }
+  renderPersonalHistory();
+});
+document.getElementById("closeHistoryBtn").addEventListener("click", () => {
+  document.getElementById("historyModal").classList.remove("show");
 });
 
 /* ============================ settings ============================ */
@@ -2586,7 +2754,7 @@ async function onLoggedIn(newSession){
     id:newSession.user.id,
     username:profile?.username || null,
     name:profile?.display_name || profile?.username || "Player",
-    accent:profile?.accent || "magenta",
+    accent:profile?.accent || "cyan",
     tileSize:profile?.tile_size || "medium",
     muted:Boolean(profile?.muted),
     pageZoom:Number(profile?.page_zoom) || 100,
