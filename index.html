@@ -33,6 +33,12 @@
   .score .num{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;}
   .score .lbl{color:var(--dim);font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;}
 
+  .account-bar{display:none;align-items:center;justify-content:space-between;gap:10px;margin:-10px 0 18px;color:var(--dim);font-size:12.5px;}
+  .account-bar.show{display:flex;}
+  .account-bar strong{color:var(--ink);}
+  .account-bar button{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:7px;padding:5px 11px;font-size:12px;cursor:pointer;font-family:inherit;}
+  .account-bar button:hover{border-color:var(--melee);color:var(--ink);}
+
   .zoom-bar{display:flex;align-items:center;gap:10px;margin:-8px 0 18px;color:var(--dim);font-size:12.5px;}
   .zoom-bar label{font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11px;}
   .zoom-bar input[type=range]{accent-color:var(--mark);width:140px;}
@@ -69,9 +75,6 @@
   .player .nm{font-weight:700;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .player .ct{font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums;flex-shrink:0;}
   .player .you{font-size:10px;color:var(--mark);font-weight:700;letter-spacing:.05em;margin-top:2px;}
-  .player .bar{height:5px;background:#14101f;border-radius:3px;margin-top:9px;overflow:hidden;}
-  .player .bar i{display:block;height:100%;background:var(--mark);border-radius:3px;transition:width .3s ease;}
-  .player.finished .nm::after{content:" ✦";color:var(--mark);}
   .player .kill{
     position:absolute;top:8px;right:8px;background:none;border:none;color:var(--panel-line);
     font-size:15px;line-height:1;cursor:pointer;padding:3px 5px;border-radius:5px;font-family:inherit;
@@ -88,18 +91,6 @@
   .privacy{font-size:11.5px;color:var(--dim);margin:0 0 22px;}
 
   .toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:18px 0 24px;}
-  .search{position:relative;flex:1 1 200px;min-width:170px;}
-  .search input{
-    width:100%;background:var(--panel);border:1px solid var(--panel-line);color:var(--ink);
-    padding:10px 34px 10px 14px;border-radius:9px;font-size:14px;font-family:inherit;
-  }
-  .search input:focus{outline:2px solid var(--mark);outline-offset:1px;border-color:transparent;}
-  .search input::placeholder{color:var(--dim);}
-  .search .clear{
-    position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;
-    color:var(--dim);cursor:pointer;font-size:16px;padding:2px 6px;line-height:1;display:none;
-  }
-  .search.has-text .clear{display:block;}
 
   .swatches{display:flex;gap:6px;align-items:center;}
   .swatches .sw{width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;}
@@ -292,17 +283,16 @@
     width:100%;background:var(--mark);border:none;color:#12060f;font-weight:700;
     padding:12px;border-radius:9px;font-size:14.5px;cursor:pointer;font-family:inherit;
   }
-  .join-options{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px;}
-  .join-options button,.room-actions .leave-room{background:transparent;border:1px solid var(--panel-line);color:var(--dim);padding:10px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;}
-  .join-options button:hover,.room-actions .leave-room:hover{border-color:var(--mark);color:var(--ink);}
-  .room-setup{display:none;margin-top:14px;}
-  .room-setup.show{display:block;}
+  .auth-toggle-btn{width:100%;margin-top:14px;background:transparent;border:1px solid var(--panel-line);color:var(--dim);padding:10px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;}
+  .auth-toggle-btn:hover{border-color:var(--mark);color:var(--ink);}
+  .room-actions .leave-room{background:transparent;border:1px solid var(--panel-line);color:var(--dim);padding:10px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;}
+  .room-actions .leave-room:hover{border-color:var(--mark);color:var(--ink);}
   .modal-card .err{color:var(--melee);font-size:12.5px;margin:-6px 0 12px;display:none;}
   .modal-card .err.show{display:block;}
 
   /* Join vs. Create room: two visually distinct panes so the two actions (one needs a
      code, one doesn't) are hard to mix up. Wraps to stacked automatically on narrow
-     containers (the 400px name modal) via flex-wrap, no media query needed. */
+     containers via flex-wrap, no media query needed. */
   .room-split{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch;}
   .room-pane{flex:1 1 160px;min-width:150px;background:#1a1526;border:1px solid var(--panel-line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;}
   .room-pane-join{border-color:#2a4658;}
@@ -321,16 +311,6 @@
   .room-action-btn.create-room{background:var(--mark);border-color:var(--mark);color:#12060f;font-weight:700;}
   .room-action-btn.create-room:hover{filter:brightness(1.12);box-shadow:0 0 14px var(--mark-soft);}
 
-  .win{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(12,7,20,.86);z-index:20;padding:20px;}
-  .win.show{display:flex;}
-  .win-card{background:var(--panel);border:1px solid var(--mark);border-radius:16px;padding:38px 32px;text-align:center;max-width:400px;box-shadow:0 0 60px var(--mark-soft);}
-  .win-card svg{width:56px;height:56px;color:var(--mark);margin-bottom:14px;filter:drop-shadow(0 0 12px var(--mark));}
-  .win-card h3{margin:0 0 8px;font-size:26px;font-weight:800;color:var(--mark);}
-  .win-card p{margin:0 0 22px;color:var(--dim);font-size:14.5px;line-height:1.5;}
-  .win-card button{background:var(--mark);border:none;color:#12060f;font-weight:700;padding:11px 22px;border-radius:9px;font-size:14px;cursor:pointer;font-family:inherit;}
-
-  .confetti{position:fixed;top:-12px;width:8px;height:14px;z-index:19;pointer-events:none;animation:fall linear forwards;}
-  @keyframes fall{to{transform:translateY(105vh) rotate(720deg);opacity:.2;}}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
 
   footer{margin-top:30px;text-align:center;color:var(--dim);font-size:12.5px;}
@@ -351,6 +331,11 @@
     </div>
   </header>
 
+  <div class="account-bar" id="accountBar">
+    <span>Logged in as <strong id="accountName"></strong></span>
+    <button id="logoutBtn" type="button">Log out</button>
+  </div>
+
   <div class="zoom-bar" id="zoomBar">
     <label for="zoomSlider">Zoom</label>
     <input type="range" id="zoomSlider" min="80" max="150" step="10" value="100">
@@ -370,18 +355,13 @@
     </div>
   </div>
   <div class="roster" id="roster"></div>
-  <p class="privacy">Everyone using this board can see the names and progress here. Anyone can remove an entry, so only clear one that's a mistake.</p>
+  <p class="privacy">Everyone in this room can see names and progress here. Anyone can remove a roommate, so only kick someone by mistake if you mean to.</p>
 
   <div class="toolbar">
-    <div class="search" id="searchWrap">
-      <input id="searchInput" type="text" placeholder="Search a weapon" autocomplete="off">
-      <button class="clear" id="clearSearch" aria-label="Clear search">×</button>
-    </div>
     <div class="swatches" id="swatches"></div>
     <button class="mute-btn" id="muteBtn" type="button" aria-label="Mute sounds"></button>
     <div class="tile-sizes" id="tileSizes" role="group" aria-label="Tile size"></div>
-    <button class="ghost" id="resetBtn">Reset my board</button>
-    <button class="ghost danger" id="leaveBtn">Leave board</button>
+    <button class="ghost" id="resetBtn">Reset my card</button>
   </div>
 
   <div class="viewing-banner" id="viewingBanner">
@@ -398,10 +378,7 @@
   </div>
 
   <div class="room-bar" id="joinRoomBar">
-    <span>Free Play — playing solo</span>
-    <div class="room-actions">
-      <button id="openJoinRoomBtn" type="button">Join or create a room</button>
-    </div>
+    <span>Join or create a room to play</span>
   </div>
   <div class="grid-bingo-config" id="joinRoomPanel">
     <div class="room-split">
@@ -458,42 +435,20 @@
   <footer>Tap a weapon after you land the kill. Tap again to undo.</footer>
 </div>
 
-<div class="modal" id="nameModal">
+<div class="modal" id="authModal">
   <div class="modal-card">
-    <h3>Who's playing?</h3>
-    <p>Pick a name your friends will recognise. It shows up on the shared board next to your progress.</p>
-    <input id="nameInput" type="text" placeholder="Your name" maxlength="18" autocomplete="off">
-    <div class="err" id="nameErr">Enter a name to join.</div>
-    <div class="join-options">
-      <button id="freePlayBtn" type="button">Free Play</button>
-      <button id="roomModeBtn" type="button">Create / Join Room</button>
-    </div>
-    <div class="room-setup" id="roomSetup">
-      <div class="room-split">
-        <div class="room-pane room-pane-join">
-          <div class="room-pane-label">Join a room</div>
-          <input id="roomInput" type="text" placeholder="Room code" maxlength="4" autocomplete="off" autocapitalize="characters">
-          <button id="joinRoomBtn" class="room-action-btn" type="button">Join Room</button>
-        </div>
-        <div class="room-divider">or</div>
-        <div class="room-pane room-pane-create">
-          <div class="room-pane-label">Start fresh</div>
-          <p class="room-pane-hint">We'll generate a new room code for you.</p>
-          <button id="createRoomBtn" class="room-action-btn create-room" type="button">Create Room</button>
-        </div>
+    <h3 id="authTitle">Log in</h3>
+    <p>An RNG Extreme Bingo account — just a username and password, no email needed.</p>
+    <form id="authForm">
+      <input id="authUsername" type="text" placeholder="Username" maxlength="20" autocomplete="username">
+      <div class="bingo-config-row" id="authDisplayNameRow" style="display:none;margin-bottom:14px;">
+        <input id="authDisplayName" type="text" placeholder="Display name" maxlength="18" autocomplete="off" style="width:100%;">
       </div>
-    </div>
-  </div>
-</div>
-
-<div class="win" id="winOverlay">
-  <div class="win-card">
-    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
-      <path d="M7 7 L13 13"/><path d="M25 7 L19 13"/><path d="M7 25 L13 19"/><path d="M25 25 L19 19"/>
-    </svg>
-    <h3>Board cleared</h3>
-    <p>Every weapon in Rivals, one kill each. That's the whole board.</p>
-    <button id="winClose">Nice</button>
+      <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password">
+      <div class="err" id="authErr"></div>
+      <button id="authSubmitBtn" type="submit">Log in</button>
+    </form>
+    <button id="authToggleModeBtn" class="auth-toggle-btn" type="button">Need an account? Sign up</button>
   </div>
 </div>
 
@@ -508,102 +463,135 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ============================================================
-   BACKEND CONFIG — read this before deploying to Vercel.
+   BACKEND CONFIG.
 
-   Leave REMOTE blank and this runs on Claude's artifact storage
-   (works in chat, does NOT exist on Vercel).
-
-   Fill both fields in and it talks to Supabase instead, which is
-   what you want for a real deployed link. Setup steps are in
-   README.md next to this file.
+   Accounts (Phase 2): real Supabase Auth users, "profiles" row per
+   user, "boards" is now room-presence only (no name/marks there
+   anymore — see Store.listBoards below). REMOTE.key is the anon
+   publishable key; it's safe to keep public exactly like before —
+   RLS is what actually protects data, gated on the real user's
+   access token sent as Authorization below (see authHeaders()).
    ============================================================ */
 const REMOTE = {
-  url: "https://jsncgdrmghmsdjpknzeo.supabase.co",   // e.g. "https://xxxxxxxx.supabase.co"
-  key: "sb_publishable_anC4SdxTteBNWvHNaTySww_v4vU-Hll"    // your Supabase anon public key
+  url: "https://jsncgdrmghmsdjpknzeo.supabase.co",
+  key: "sb_publishable_anC4SdxTteBNWvHNaTySww_v4vU-Hll"
 };
 const useRemote = () => Boolean(REMOTE.url && REMOTE.key);
-
-const ME_KEY = "rngbingo:me";
-const PREFIX = "rngbingo:p:";
+// Local-fallback key prefix for rooms/rounds/round_entries only (item: no local fallback exists
+// for boards/profiles anymore — presence and accounts only ever make sense against a real backend).
 const ROOM_PREFIX = "rngbingo:room:";
 
+// The Supabase client (loaded via the supabase-js UMD script tag above). Auth only ever talks to
+// this — boards/rounds/round_entries still go through plain fetch() in Store below, unchanged in
+// shape, just now authenticated (item 5).
+const sbClient = supabase.createClient(REMOTE.url, REMOTE.key);
+
+let session = null;
+let accessToken = null;
+// Kept current for every REST call below. Registered before the initial getSession() call in
+// init() so no early sign-in/sign-out event is missed.
+sbClient.auth.onAuthStateChange((_event, newSession) => {
+  session = newSession;
+  accessToken = newSession?.access_token || null;
+});
+// apikey stays the static anon key unchanged (item 5) — only Authorization carries the real
+// user's access token, which is what makes RLS's auth.uid() resolve to them instead of anon.
+function authHeaders(extra){
+  return {apikey:REMOTE.key, Authorization:"Bearer " + (accessToken || REMOTE.key), ...(extra || {})};
+}
+
 const Store = {
-  async getMe(){
-    if(useRemote()){
-      const raw = localStorage.getItem(ME_KEY);
-      return raw ? JSON.parse(raw) : null;
-    }
-    try{
-      const r = await window.storage.get(ME_KEY);
-      return r && r.value ? JSON.parse(r.value) : null;
-    }catch(e){ return null; }
+  async getProfile(userId){
+    const res = await fetch(`${REMOTE.url}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=*`, {
+      headers:authHeaders()
+    });
+    if(!res.ok) throw new Error("profile fetch failed " + res.status);
+    const rows = await res.json();
+    return rows[0] || null;
   },
-  async setMe(obj){
-    if(useRemote()){ localStorage.setItem(ME_KEY, JSON.stringify(obj)); return; }
-    await window.storage.set(ME_KEY, JSON.stringify(obj));
+  async createProfile(profile){
+    const res = await fetch(`${REMOTE.url}/rest/v1/profiles`, {
+      method:"POST",
+      headers:authHeaders({"Content-Type":"application/json"}),
+      body:JSON.stringify([profile])
+    });
+    if(!res.ok) throw new Error("profile create failed " + res.status);
   },
+  // Backs every accent/tileSize/muted/pageZoom change (item 4) — patches just the given fields.
+  async saveProfile(userId, patch){
+    const res = await fetch(`${REMOTE.url}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+      method:"PATCH",
+      headers:authHeaders({"Content-Type":"application/json", Prefer:"return=minimal"}),
+      body:JSON.stringify(patch)
+    });
+    if(!res.ok) throw new Error("profile save failed " + res.status);
+  },
+  // Which room (if any) this user currently has a presence row in — the source of truth for
+  // me.roomCode on load, instead of trusting anything persisted client-side.
+  async getMyRoom(userId){
+    const res = await fetch(`${REMOTE.url}/rest/v1/boards?user_id=eq.${encodeURIComponent(userId)}&select=room_code&limit=1`, {
+      headers:authHeaders()
+    });
+    if(!res.ok) throw new Error("room lookup failed " + res.status);
+    const rows = await res.json();
+    return rows[0]?.room_code || null;
+  },
+  // Room presence only (item 6) — boards has no name/marks/accent/updated anymore. Everywhere the
+  // code needs a room member's display name/accent/settings, it comes from the embedded profiles()
+  // join below in one request, not a separate per-player profile lookup.
   async listBoards(roomCode){
-    if(useRemote()){
-      const scope = roomCode ? `room_code=eq.${encodeURIComponent(roomCode)}` : "room_code=is.null";
-      const res = await fetch(`${REMOTE.url}/rest/v1/boards?select=*&${scope}`, {
-        headers:{ apikey: REMOTE.key, Authorization: "Bearer " + REMOTE.key }
-      });
-      if(!res.ok) throw new Error("list failed " + res.status);
-      const rows = await res.json();
-      const out = {};
-      rows.forEach(r => { out[r.id] = { name:r.name, marks:r.marks || {}, updated:Number(r.updated) || 0, roomCode:r.room_code || null, accent:r.accent || null }; });
-      return out;
-    }
-    const res = await window.storage.list(PREFIX, true);
-    const keys = (res && res.keys) || [];
+    if(!roomCode) return {};
+    // One request, embedding profiles() via PostgREST's FK-based embedding — not a separate
+    // profile lookup per player (item 6).
+    const res = await fetch(`${REMOTE.url}/rest/v1/boards?select=user_id,joined_at,profiles(username,display_name,accent,tile_size,muted,page_zoom)&room_code=eq.${encodeURIComponent(roomCode)}`, {
+      headers:authHeaders()
+    });
+    if(!res.ok) throw new Error("list failed " + res.status);
+    const rows = await res.json();
     const out = {};
-    for(const k of keys){
-      try{
-        const r = await window.storage.get(k, true);
-        if(r && r.value){
-          const board = JSON.parse(r.value);
-          if((board.roomCode || null) === (roomCode || null)) out[k.slice(PREFIX.length)] = board;
-        }
-      }catch(e){ /* skip unreadable entry */ }
-    }
+    rows.forEach(r => {
+      const p = r.profiles || {};
+      out[r.user_id] = {
+        name:p.display_name || p.username || "Player",
+        username:p.username || null,
+        accent:p.accent || null,
+        tileSize:p.tile_size || null,
+        muted:Boolean(p.muted),
+        pageZoom:Number(p.page_zoom) || 100,
+        joinedAt:Number(r.joined_at) || 0
+      };
+    });
     return out;
   },
-  async saveBoard(id, board, roomCode){
-    if(useRemote()){
-      const res = await fetch(`${REMOTE.url}/rest/v1/boards`, {
-        method:"POST",
-        headers:{
-          apikey: REMOTE.key,
-          Authorization: "Bearer " + REMOTE.key,
-          "Content-Type":"application/json",
-          Prefer:"resolution=merge-duplicates"
-        },
-        body: JSON.stringify([{ id, name:board.name, marks:board.marks, updated:board.updated, room_code:roomCode || null, accent:me?.accent || null }])
-      });
-      if(!res.ok) throw new Error("save failed " + res.status);
-      return;
-    }
-    await window.storage.set(PREFIX + id, JSON.stringify({...board, roomCode:roomCode || null, accent:me?.accent || null}), true);
+  // Joining = insert a presence row. Deletes any existing row for this user first — a user should
+  // only ever be present in one room at a time, regardless of what the table's own constraints allow.
+  async joinRoom(roomCode, userId){
+    try{ await this.leaveRoomPresence(userId); }catch(e){ /* fine if there was nothing to leave */ }
+    const res = await fetch(`${REMOTE.url}/rest/v1/boards`, {
+      method:"POST",
+      headers:authHeaders({"Content-Type":"application/json", Prefer:"resolution=merge-duplicates"}),
+      body:JSON.stringify([{room_code:roomCode, user_id:userId, joined_at:Date.now()}])
+    });
+    if(!res.ok) throw new Error("join room failed " + res.status);
   },
-  async deleteBoard(id, roomCode){
-    if(useRemote()){
-      const scope = roomCode ? `room_code=eq.${encodeURIComponent(roomCode)}` : "room_code=is.null";
-      const res = await fetch(`${REMOTE.url}/rest/v1/boards?id=eq.${encodeURIComponent(id)}&${scope}`, {
-        method:"DELETE",
-        headers:{ apikey: REMOTE.key, Authorization: "Bearer " + REMOTE.key }
-      });
-      if(!res.ok) throw new Error("delete failed " + res.status);
-      return;
-    }
-    await window.storage.delete(PREFIX + id, true);
+  // Leaving/kicking = delete a row (item 6) — kicking a roommate is already allowed by RLS. When
+  // roomCode is omitted, deletes whatever room this user currently has a presence row in.
+  async leaveRoomPresence(userId, roomCode){
+    const scope = roomCode ? `&room_code=eq.${encodeURIComponent(roomCode)}` : "";
+    const res = await fetch(`${REMOTE.url}/rest/v1/boards?user_id=eq.${encodeURIComponent(userId)}${scope}`, {
+      method:"DELETE",
+      headers:authHeaders()
+    });
+    if(!res.ok) throw new Error("leave room failed " + res.status);
   },
   async createRoom(code){
     if(useRemote()){
       const res = await fetch(`${REMOTE.url}/rest/v1/rooms`, {
         method:"POST",
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json"},
+        headers:authHeaders({"Content-Type":"application/json"}),
         body:JSON.stringify([{code, created_at:Date.now()}])
       });
       if(!res.ok) throw new Error("create room failed " + res.status);
@@ -614,7 +602,7 @@ const Store = {
   async hasRoom(code){
     if(useRemote()){
       const res = await fetch(`${REMOTE.url}/rest/v1/rooms?code=eq.${encodeURIComponent(code)}&select=code`, {
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key}
+        headers:authHeaders()
       });
       if(!res.ok) throw new Error("find room failed " + res.status);
       return (await res.json()).length > 0;
@@ -625,7 +613,7 @@ const Store = {
     if(!roomCode) return null;
     if(useRemote()){
       const res = await fetch(`${REMOTE.url}/rest/v1/rounds?room_code=eq.${encodeURIComponent(roomCode)}&ended_at=is.null&order=created_at.desc&limit=1`, {
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key}
+        headers:authHeaders()
       });
       if(!res.ok) throw new Error("round lookup failed " + res.status);
       const rows = await res.json();
@@ -641,7 +629,7 @@ const Store = {
     if(!roundId) return null;
     if(useRemote()){
       const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&select=*`, {
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key}
+        headers:authHeaders()
       });
       if(!res.ok) throw new Error("round fetch failed " + res.status);
       const rows = await res.json();
@@ -656,7 +644,7 @@ const Store = {
     if(!roundId) return [];
     if(useRemote()){
       const res = await fetch(`${REMOTE.url}/rest/v1/round_entries?round_id=eq.${encodeURIComponent(roundId)}&select=*`, {
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key}
+        headers:authHeaders()
       });
       if(!res.ok) throw new Error("round entries lookup failed " + res.status);
       return await res.json();
@@ -670,13 +658,13 @@ const Store = {
     if(useRemote()){
       const roundRes = await fetch(`${REMOTE.url}/rest/v1/rounds`, {
         method:"POST",
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json"},
+        headers:authHeaders({"Content-Type":"application/json"}),
         body:JSON.stringify([round])
       });
       if(!roundRes.ok) throw new Error("round create failed " + roundRes.status);
       const entryRes = await fetch(`${REMOTE.url}/rest/v1/round_entries`, {
         method:"POST",
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json"},
+        headers:authHeaders({"Content-Type":"application/json"}),
         body:JSON.stringify(entries)
       });
       if(!entryRes.ok) throw new Error("round entries create failed " + entryRes.status);
@@ -689,7 +677,7 @@ const Store = {
     if(useRemote()){
       const res = await fetch(`${REMOTE.url}/rest/v1/round_entries`, {
         method:"POST",
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates"},
+        headers:authHeaders({"Content-Type":"application/json", Prefer:"resolution=merge-duplicates"}),
         body:JSON.stringify([entry])
       });
       if(!res.ok) throw new Error("round entry create failed " + res.status);
@@ -707,7 +695,7 @@ const Store = {
       const baseVersion = Number(entry.version) || 0;
       const res = await fetch(`${REMOTE.url}/rest/v1/round_entries?round_id=eq.${encodeURIComponent(entry.round_id)}&player_id=eq.${encodeURIComponent(entry.player_id)}&version=eq.${baseVersion}`, {
         method:"PATCH",
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=representation"},
+        headers:authHeaders({"Content-Type":"application/json", Prefer:"return=representation"}),
         body:JSON.stringify({marks:entry.marks, marked_by:entry.marked_by || {}, lines_completed:entry.lines_completed, points:entry.points, finished_at:entry.finished_at || null, version:baseVersion + 1})
       });
       if(!res.ok) throw new Error("round entry save failed " + res.status);
@@ -727,7 +715,7 @@ const Store = {
     if(useRemote()){
       const res = await fetch(`${REMOTE.url}/rest/v1/round_entries?round_id=eq.${encodeURIComponent(roundId)}&player_id=eq.${encodeURIComponent(playerId)}`, {
         method:"PATCH",
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=minimal"},
+        headers:authHeaders({"Content-Type":"application/json", Prefer:"return=minimal"}),
         body:JSON.stringify({blocked_attempts:blockedAttempts})
       });
       if(!res.ok) throw new Error("blocked attempt save failed " + res.status);
@@ -742,7 +730,7 @@ const Store = {
     if(!useRemote()) return false;
     const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&winner_id=is.null`, {
       method:"PATCH",
-      headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=representation"},
+      headers:authHeaders({"Content-Type":"application/json", Prefer:"return=representation"}),
       body:JSON.stringify({winner_id:playerId, ended_at:Date.now(), ended_by:actorName})
     });
     if(!res.ok) throw new Error("winner claim failed " + res.status);
@@ -752,7 +740,7 @@ const Store = {
     if(useRemote()){
       const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&ended_at=is.null`, {
         method:"PATCH",
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=minimal"},
+        headers:authHeaders({"Content-Type":"application/json", Prefer:"return=minimal"}),
         body:JSON.stringify({ended_at:Date.now(), ended_by:actorName, dnf:Boolean(dnf)})
       });
       if(!res.ok) throw new Error("round end failed " + res.status);
@@ -767,7 +755,7 @@ const Store = {
     if(!useRemote()) return false;
     const res = await fetch(`${REMOTE.url}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&winner_id=is.null`, {
       method:"PATCH",
-      headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key, "Content-Type":"application/json", Prefer:"return=representation"},
+      headers:authHeaders({"Content-Type":"application/json", Prefer:"return=representation"}),
       body:JSON.stringify({winner_id:playerId})
     });
     if(!res.ok) throw new Error("winner claim failed " + res.status);
@@ -777,7 +765,7 @@ const Store = {
     if(!roomCode) return [];
     if(useRemote()){
       const res = await fetch(`${REMOTE.url}/rest/v1/rounds?room_code=eq.${encodeURIComponent(roomCode)}&ended_at=not.is.null&order=ended_at.desc`, {
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key}
+        headers:authHeaders()
       });
       if(!res.ok) throw new Error("round history lookup failed " + res.status);
       return await res.json();
@@ -789,7 +777,7 @@ const Store = {
     if(useRemote()){
       const idList = roundIds.map(id => encodeURIComponent(id)).join(",");
       const res = await fetch(`${REMOTE.url}/rest/v1/round_entries?round_id=in.(${idList})&select=*`, {
-        headers:{apikey:REMOTE.key, Authorization:"Bearer " + REMOTE.key}
+        headers:authHeaders()
       });
       if(!res.ok) throw new Error("round entries batch lookup failed " + res.status);
       return await res.json();
@@ -834,15 +822,13 @@ const POLL_MS = useRemote() ? 5000 : 9000;
 
 let me = null;
 let boards = {};
-let viewingId = null;
-let query = "";
-let wasComplete = false;
 let confirmingId = null;
 let lastSync = 0;
 let syncOk = false;
 let pollTimer = null;
 let audioContext = null;
 let activeRound = null;
+let lastRoundId = null;
 let roundEntries = [];
 let roundViewingId = null;
 let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisibility:"hidden",teamFormation:"random",manualTeams:{},teamSharedEdit:false,underdogBonus:"none"};
@@ -861,17 +847,9 @@ function slug(s){
   return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
 }
 function currentRoomCode(){ return me?.roomCode || null; }
-function currentBoardId(){ return me.id + (currentRoomCode() ? "--" + currentRoomCode() : ""); }
-function myBoard(){
-  const id = currentBoardId();
-  if(!boards[id]) boards[id] = {name:me.name, marks:{}, updated:Date.now(), roomCode:currentRoomCode()};
-  return boards[id];
-}
-function shownBoard(){ return boards[viewingId] || myBoard(); }
-function isMine(){ return viewingId === currentBoardId(); }
-function countDone(board){ return ALL.filter(i => board.marks && board.marks[i.key]).length; }
-function playerIdForBoard(id){ return String(id).split("--")[0]; }
-function currentRoomPresentIds(){ return new Set(Object.keys(boards).map(playerIdForBoard)); }
+// boards is now keyed directly by the real auth user id (item 7) — no more synthetic
+// "id--roomCode" composite, since a presence row is already scoped by its own room_code column.
+function currentRoomPresentIds(){ return new Set(Object.keys(boards)); }
 function knownRoomPlayers(){
   // Everyone with any history in this room — from ended-round totals or the current round's
   // entries — regardless of whether they currently have a live board. Used to keep players who
@@ -924,8 +902,7 @@ function myTeamId(){
 }
 function myEntryId(){ return myTeamId() || me?.id; }
 function teamMemberName(pid){
-  const boardEntry = Object.entries(boards).find(([bid]) => playerIdForBoard(bid) === pid);
-  if(boardEntry) return boardEntry[1].name;
+  if(boards[pid]) return boards[pid].name;
   // Reads roomLeaderboard directly rather than knownRoomPlayers() — that function calls back into
   // this one to name live team members, and going through it here would recurse.
   const historical = roomLeaderboard.find(r => r.player_id === pid);
@@ -1043,7 +1020,6 @@ function computeTeamMVP(entry, round){
   });
   return mvp ? teamMemberName(mvp.pid) : null;
 }
-function playerEntryForBoard(id){ return roundEntries.find(entry => entry.player_id === playerIdForBoard(id)); }
 function canViewRoundEntry(entry){
   if(!activeRound || !entry) return false;
   // myEntryId() already resolves to "my" team's key in a team round, so this and everything below
@@ -1107,14 +1083,7 @@ function showToast(message){
 async function syncNow(){
   try{
     const remote = await Store.listBoards(currentRoomCode());
-    const boardId = currentBoardId();
-    const mine = boards[boardId];
-    // Keep whichever copy of my own board is newer — covers marking on a second device.
-    if(mine){
-      const theirs = remote[boardId];
-      remote[boardId] = (theirs && theirs.updated > (mine.updated || 0)) ? theirs : mine;
-    }
-    const gone = viewingId && viewingId !== boardId && !remote[viewingId];
+    const boardId = me.id;
     const hadRosterBaseline = Boolean(rosterBaseline);
     if(currentRoomCode()){
       if(rosterBaseline){
@@ -1122,8 +1091,7 @@ async function syncNow(){
           if(id !== boardId && !rosterBaseline.has(id)){
             // A single toast for this event: "rejoined" replaces "joined" for anyone with prior
             // history in this room, it never fires alongside the plain "joined" wording.
-            const pid = playerIdForBoard(id);
-            const hasHistory = knownRoomPlayers().has(pid);
+            const hasHistory = knownRoomPlayers().has(id);
             showToast(`${remote[id].name} ${hasHistory ? "rejoined" : "joined"} the room`);
           }
         });
@@ -1136,13 +1104,12 @@ async function syncNow(){
       rosterBaseline = null;
     }
     boards = remote;
-    if(gone) viewingId = boardId;
     const previousRound = activeRound;
     const previousEntries = roundEntries;
-    const previousRoundId = previousRound?.id || me.activeRoundId || null;
+    const previousRoundId = previousRound?.id || lastRoundId || null;
     activeRound = await Store.getActiveRound(currentRoomCode());
-    if(!activeRound && me.activeRoundId){
-      const finished = await Store.getRound(me.activeRoundId);
+    if(!activeRound && lastRoundId){
+      const finished = await Store.getRound(lastRoundId);
       if(finished && finished.ended_at) activeRound = finished;
     }
     roundEntries = activeRound ? await Store.listRoundEntries(activeRound.id) : [];
@@ -1240,10 +1207,9 @@ async function syncNow(){
       }
     }
     if(previousRoundId !== nextRoundId) roundViewingId = null;
-    if(previousRoundId !== nextRoundId && me.activeRoundId !== nextRoundId){
-      me.activeRoundId = nextRoundId;
-      await Store.setMe(me);
-    }
+    // Purely in-memory (item 4/7): no longer persisted anywhere — losing it on a hard refresh just
+    // means landing on the idle room screen instead of an ended round's recap, which is fine.
+    lastRoundId = nextRoundId;
     if(currentRoomCode()){
       const endedRounds = await Store.listEndedRounds(currentRoomCode());
       if(endedRounds.length === 0){
@@ -1334,12 +1300,10 @@ function buildSwatches(){
     b.style.background = a.hex;
     b.setAttribute("aria-label","Accent colour " + a.id);
     b.addEventListener("click", async () => {
-      me.accent = a.id; applyAccent(); buildSwatches(); await Store.setMe(me);
-      // Push the new accent to the shared boards row right away — Store.setMe() only persists it
-      // locally. Without this, teammates only see a stale/null accent until this player's board
-      // happens to get saved for an unrelated reason (marking a tile, joining a room), which could
-      // be a long time or never — this was the actual cause of the manual-assignment highlight bug.
-      try{ await Store.saveBoard(currentBoardId(), myBoard(), currentRoomCode()); }catch(e){ console.error("accent save failed", e); }
+      me.accent = a.id; applyAccent(); buildSwatches();
+      // Profiles are the single source of truth now (item 4/6) — teammates see it on their next
+      // sync via the boards→profiles embed, no separate push needed.
+      try{ await Store.saveProfile(me.id, {accent:a.id}); }catch(e){ console.error("accent save failed", e); }
     });
     box.appendChild(b);
   });
@@ -1365,7 +1329,7 @@ function buildTileSizes(){
       me.tileSize = size.id;
       applyTileSize();
       buildTileSizes();
-      await Store.setMe(me);
+      try{ await Store.saveProfile(me.id, {tile_size:size.id}); }catch(e){ console.error("tile size save failed", e); }
     });
     box.appendChild(b);
   });
@@ -1421,36 +1385,28 @@ function renderRoomBar(){
   document.getElementById("roomCodeLabel").textContent = room || "";
 }
 
-// Tile-size picker + reset button: unchanged in Free Play (still always visible, "Reset my
-// board"); hidden entirely in a room except during a live "All"-mode round, where they reappear
-// relabeled "Reset my card" and scoped to the player's own round entry (item 9).
+// Tile size only matters while looking at a round's grid now — no more default 43-weapon
+// tracker to browse, so there's no other context where it'd apply (item 8).
 function renderResetAndTileControls(){
   const tileBox = document.getElementById("tileSizes");
   const resetBtn = document.getElementById("resetBtn");
-  const inRoom = Boolean(currentRoomCode());
-  const allModeLive = inRoom && Boolean(activeRound && !activeRound.ended_at && activeRound.layout === "all");
-  const showControls = !inRoom || allModeLive;
-  tileBox.style.display = showControls ? "" : "none";
-  if(!showControls){
+  tileBox.style.display = activeRound ? "" : "none";
+  const allModeLive = Boolean(activeRound && !activeRound.ended_at && activeRound.layout === "all");
+  if(!allModeLive){
     resetBtn.style.display = "none";
     return;
   }
-  if(allModeLive){
-    resetBtn.textContent = "Reset my card";
-    const own = currentRoundEntry();
-    resetBtn.style.display = (own && !own.finished_at) ? "" : "none";
-  } else {
-    resetBtn.textContent = "Reset my board";
-    resetBtn.style.display = isMine() ? "" : "none";
-  }
+  resetBtn.textContent = "Reset my card";
+  const own = currentRoundEntry();
+  resetBtn.style.display = (own && !own.finished_at) ? "" : "none";
 }
 
+// No more Free Play (item 8) — this panel is the only way to do anything after logging in, so
+// it's shown directly whenever idle, not tucked behind a toggle button.
 function renderJoinRoomBar(){
   const show = !currentRoomCode();
   document.getElementById("joinRoomBar").classList.toggle("show", show);
-  const panel = document.getElementById("joinRoomPanel");
-  panel.classList.toggle("show", show && panel.dataset.open === "true");
-  if(!show) panel.dataset.open = "false";
+  document.getElementById("joinRoomPanel").classList.toggle("show", show);
 }
 
 function renderRoomLeaderboard(){
@@ -1513,7 +1469,7 @@ function renderRoomLeaderboard(){
 function renderContextBar(){
   const bar = document.getElementById("contextBar");
   const room = currentRoomCode();
-  if(!room){ bar.innerHTML = "<strong>Free Play</strong>"; return; }
+  if(!room){ bar.innerHTML = "<strong>Not in a room yet</strong>"; return; }
   if(activeRound && !activeRound.ended_at){
     bar.innerHTML = `<strong>Room ${escapeHtml(room)}</strong> · ${roundSizeLabel(activeRound)} ${roundModeLabel(activeRound, true)} round in progress`;
   } else if(activeRound && activeRound.ended_at){
@@ -1558,7 +1514,7 @@ function buildTeamAssignRows(members){
   const box = document.getElementById("teamAssignBox");
   box.innerHTML = "";
   members.forEach(([id, board]) => {
-    const pid = playerIdForBoard(id);
+    const pid = id;
     // This player's own accent (item 3), not the current viewer's — falls back to magenta the
     // same way applyAccent() does when a board has no accent recorded yet.
     const accent = ACCENTS.find(a => a.id === (board.accent || "magenta")) || ACCENTS[0];
@@ -1589,7 +1545,7 @@ function buildTeamAssignRows(members){
 function teamConfigValid(members){
   if(!isTeamRoomSize(members)) return true;
   if(gridBingoConfig.teamFormation !== "manual") return true;
-  const pids = members.map(([id]) => playerIdForBoard(id));
+  const pids = members.map(([id]) => id);
   if(!pids.every(pid => gridBingoConfig.manualTeams[pid])) return false;
   const teamACount = pids.filter(pid => gridBingoConfig.manualTeams[pid] === "team-A").length;
   return teamACount >= 1 && teamACount < pids.length;
@@ -1629,7 +1585,9 @@ function buildGridBingoConfig(){
   if(showUnderdogBonus){
     buildBingoOptions("underdogBonusOptions", [{label:"None",value:"none"},{label:"Per-tile only",value:"per_tile"},{label:"Everything",value:"everything"}], gridBingoConfig.underdogBonus, value => { gridBingoConfig.underdogBonus = value; buildGridBingoConfig(); });
   }
-  document.getElementById("confirmGridBingoBtn").disabled = !teamConfigValid(members);
+  // No solo tracking outside a room anymore (item 8) — a round needs at least 2 people, same
+  // reasoning that already required >2 for team rules, just at the lower "anything at all" bar.
+  document.getElementById("confirmGridBingoBtn").disabled = members.length < 2 || !teamConfigValid(members);
 }
 
 function makeRoundEntry(playerId, playerName, card, roundId){
@@ -1639,7 +1597,7 @@ function makeRoundEntry(playerId, playerName, card, roundId){
 // Random split: shuffle everyone present, then divide as evenly as possible (item 1). Manual
 // split: read gridBingoConfig.manualTeams, filtered to members actually present right now.
 function buildTeams(members){
-  const pids = members.map(([id]) => playerIdForBoard(id));
+  const pids = members.map(([id]) => id);
   if(gridBingoConfig.teamFormation === "manual"){
     return {
       "team-A": pids.filter(pid => gridBingoConfig.manualTeams[pid] === "team-A"),
@@ -1744,7 +1702,7 @@ async function startGridBingo(){
   };
   const entries = members.map(([id,board]) => {
     const card = sharedCard ? sharedCard.slice() : (isAll ? fullCard() : makeRoundCard(round.grid_size));
-    return makeRoundEntry(playerIdForBoard(id), board.name, card, roundId);
+    return makeRoundEntry(id, board.name, card, roundId);
   });
   await Store.createRound(round, entries);
   await syncNow();
@@ -1952,7 +1910,6 @@ function renderRoundBoard(){
   document.getElementById("viewingBanner").classList.toggle("show", entry.player_id !== myEntryId());
   document.getElementById("viewingName").textContent = entry.player_name;
   document.getElementById("resetBtn").style.display = "none";
-  document.getElementById("leaveBtn").style.display = "none";
 
   // While the round is active (not yet ended) the header shows round progress; once it ends, the
   // round grid/leaderboard stay visible but there's nothing actively being tracked at that moment
@@ -2051,14 +2008,15 @@ function roomCodeFromUrl(){
 }
 
 /* ============================ render ============================ */
+// No more Free Play (item 8) — this is always a room roster now: presence + cumulative points,
+// never a per-player 43-weapon tracker to click into.
 function renderRoster(){
   const box = document.getElementById("roster");
   box.innerHTML = "";
   const entries = Object.entries(boards);
-  const inRoom = Boolean(currentRoomCode());
   const pointsFor = pid => roomLeaderboard.find(r => r.player_id === pid)?.points || 0;
   const leftPlayers = [];
-  if(inRoom){
+  if(currentRoomCode()){
     const presentIds = currentRoomPresentIds();
     knownRoomPlayers().forEach((name, pid) => { if(!presentIds.has(pid)) leftPlayers.push({player_id:pid, player_name:name}); });
   }
@@ -2067,13 +2025,10 @@ function renderRoster(){
     return;
   }
   entries
-    .sort((a,b) => inRoom
-      ? (pointsFor(playerIdForBoard(b[0])) - pointsFor(playerIdForBoard(a[0])) || a[1].name.localeCompare(b[1].name))
-      : (countDone(b[1]) - countDone(a[1]) || a[1].name.localeCompare(b[1].name)))
+    .sort((a,b) => pointsFor(b[0]) - pointsFor(a[0]) || a[1].name.localeCompare(b[1].name))
     .forEach(([id,b]) => {
-      const done = countDone(b);
       const card = document.createElement("div");
-      card.className = "player" + (id === viewingId ? " viewing" : "") + (!inRoom && done === TOTAL ? " finished" : "");
+      card.className = "player";
 
       if(confirmingId === id){
         card.innerHTML = `<div class="confirm"><span>Remove <b>${escapeHtml(b.name)}</b>?</span>
@@ -2081,25 +2036,20 @@ function renderRoster(){
         card.querySelector(".yes").addEventListener("click", () => removePlayer(id));
         card.querySelector(".no").addEventListener("click", () => { confirmingId = null; renderRoster(); });
       } else {
-        const open = document.createElement("button");
-        open.className = "open";
-        open.type = "button";
-        open.innerHTML = inRoom
-          ? `<div class="top"><span class="nm">${escapeHtml(b.name)}</span><span class="ct">${pointsFor(playerIdForBoard(id))} pts</span></div>` +
-            (id === currentBoardId() ? '<div class="you">YOU</div>' : "")
-          : `<div class="top"><span class="nm">${escapeHtml(b.name)}</span><span class="ct">${done} / ${TOTAL}</span></div>` +
-            (id === currentBoardId() ? '<div class="you">YOU</div>' : "") +
-            `<div class="bar"><i style="width:${done/TOTAL*100}%"></i></div>`;
-        if(!inRoom) open.addEventListener("click", () => { viewingId = id; renderAll(); }); // no per-player board to view in-room (item 7)
-        card.appendChild(open);
+        card.innerHTML = `<div class="top"><span class="nm">${escapeHtml(b.name)}</span><span class="ct">${pointsFor(id)} pts</span></div>` +
+          (id === me.id ? '<div class="you">YOU</div>' : "");
 
-        const kill = document.createElement("button");
-        kill.className = "kill";
-        kill.type = "button";
-        kill.textContent = "×";
-        kill.setAttribute("aria-label", "Remove " + b.name + " from the board");
-        kill.addEventListener("click", e => { e.stopPropagation(); confirmingId = id; renderRoster(); });
-        card.appendChild(kill);
+        // Self-removal goes through "Leave Room" instead (item 9) — the kick button here is only
+        // for removing a roommate, which the RLS policy already allows.
+        if(id !== me.id){
+          const kill = document.createElement("button");
+          kill.className = "kill";
+          kill.type = "button";
+          kill.textContent = "×";
+          kill.setAttribute("aria-label", "Remove " + b.name + " from the room");
+          kill.addEventListener("click", e => { e.stopPropagation(); confirmingId = id; renderRoster(); });
+          card.appendChild(kill);
+        }
       }
       box.appendChild(card);
     });
@@ -2142,114 +2092,46 @@ function makeTile(item, board, editable, onToggle, masked){
   return tile;
 }
 
+// No Free Play (item 8) — either a round is live (renderRoundBoard), or this player is idle in a
+// room (or not in one yet), in which case there's nothing to track: no default 43-weapon tracker,
+// no per-player board to click into.
 function renderBoard(){
   document.getElementById("progressTrack").style.display = "";
-  if(activeRound && currentRoomCode()){
+  if(activeRound){
     renderRoundBoard();
     return;
   }
   document.getElementById("bingoLeaderboard").classList.remove("show");
   document.getElementById("gridBingoStatus").classList.remove("show");
+  document.getElementById("board").innerHTML = "";
+  document.getElementById("progressTrack").style.display = "none";
+  document.getElementById("viewingBanner").classList.remove("show");
 
-  if(currentRoomCode()){
-    // In a room with no active round: no default 43-weapon tracker (item 7) — just the room
-    // code/leaderboard/history/Start Game elsewhere on the page. Header shows room points (item 8).
-    // Free Play (currentRoomCode() null) never reaches this branch and is untouched below.
-    document.getElementById("board").innerHTML = "";
-    document.getElementById("progressTrack").style.display = "none";
-    document.getElementById("viewingBanner").classList.remove("show");
-    document.getElementById("leaveBtn").style.display = "none";
-    const myPoints = roomLeaderboard.find(r => r.player_id === me.id)?.points || 0;
-    document.getElementById("scoreNum").textContent = `${myPoints}`;
-    document.getElementById("scoreLbl").textContent = "my room points";
+  if(!currentRoomCode()){
+    document.getElementById("scoreNum").textContent = "—";
+    document.getElementById("scoreLbl").textContent = "Join a room to play";
     return;
   }
-
-  const board = shownBoard();
-  const editable = isMine();
-  const el = document.getElementById("board");
-  el.innerHTML = "";
-  const q = query.trim().toLowerCase();
-  const matches = ALL.filter(i => i.name.toLowerCase().includes(q));
-
-  if(matches.length === 0){
-    el.innerHTML = `<div class="empty">No weapon matches “${escapeHtml(query)}”. Check the spelling, or clear the search.</div>`;
-  } else {
-    Object.keys(DATA).forEach(cat => {
-      const items = matches.filter(i => i.cat === cat);
-      if(items.length === 0) return;
-      const section = document.createElement("div");
-      section.className = "category";
-      const catDone = DATA[cat].filter(w => board.marks && board.marks[cat+"::"+w]).length;
-      const head = document.createElement("div");
-      head.className = "cat-head cat-" + cat.toLowerCase();
-      head.innerHTML = `<h2>${cat}</h2><div class="cat-bar"></div><div class="count">${catDone} / ${DATA[cat].length}</div>`;
-      section.appendChild(head);
-      const grid = document.createElement("div");
-      grid.className = "grid";
-      items.forEach(i => grid.appendChild(makeTile(i, board, editable)));
-      section.appendChild(grid);
-      el.appendChild(section);
-    });
-  }
-
-  const done = countDone(board);
-  document.getElementById("scoreNum").textContent = `${done} / ${TOTAL}`;
-  document.getElementById("scoreLbl").textContent = editable ? "weapons cleared" : escapeHtml(board.name) + "'s progress";
-  document.getElementById("progressFill").style.width = (done / TOTAL * 100) + "%";
-
-  document.getElementById("viewingBanner").classList.toggle("show", !editable);
-  document.getElementById("viewingName").textContent = board.name;
-  document.getElementById("resetBtn").style.display = editable ? "" : "none";
-  document.getElementById("leaveBtn").style.display = editable && !currentRoomCode() ? "" : "none";
-
-  if(editable){
-    const complete = done === TOTAL;
-    if(complete && !wasComplete) celebrate();
-    wasComplete = complete;
-  }
+  const myPoints = roomLeaderboard.find(r => r.player_id === me.id)?.points || 0;
+  document.getElementById("scoreNum").textContent = `${myPoints}`;
+  document.getElementById("scoreLbl").textContent = "my room points";
 }
 
 function renderAll(){ renderRoster(); renderBoard(); renderRoomBar(); renderJoinRoomBar(); renderGridBingoControls(); renderContextBar(); renderRoomLeaderboard(); renderResetAndTileControls(); }
 
 /* ============================ actions ============================ */
-async function toggle(key){
-  const b = myBoard();
-  const marked = !b.marks[key];
-  b.marks[key] = marked;
-  b.updated = Date.now();
-  b.name = me.name;
-  b.roomCode = currentRoomCode();
-  playMarkSound(marked);
-  renderAll();
-  try{ await Store.saveBoard(currentBoardId(), b, currentRoomCode()); }catch(e){ syncOk = false; paintSyncState(); }
-  await syncNow();
-  renderRoster();
-}
-
+// Kicking a roommate (item 6/9) — never self, "Leave Room" handles that. Ends the round for
+// everyone first, same as before, since the round can't sensibly continue without this entrant.
 async function removePlayer(id){
   confirmingId = null;
   const removedName = boards[id]?.name || "A player";
   delete boards[id];
-  if(viewingId === id) viewingId = currentBoardId();
-  const wasMe = id === currentBoardId();
   if(activeRound && !activeRound.ended_at){
     try{ await Store.endRound(activeRound.id, removedName); }catch(e){ console.error(e); }
     activeRound = {...activeRound, ended_at:Date.now(), ended_by:removedName};
   }
   renderAll();
-  try{ await Store.deleteBoard(id, currentRoomCode()); }catch(e){ console.error(e); }
-  if(wasMe) location.reload();
-}
-
-async function leaveBoard(){
-  stopPolling();
-  try{ await Store.deleteBoard(currentBoardId(), currentRoomCode()); }catch(e){ console.error(e); }
-  try{
-    if(useRemote()) localStorage.removeItem(ME_KEY);
-    else await window.storage.delete(ME_KEY);
-  }catch(e){ /* ignore */ }
-  location.reload();
+  try{ await Store.leaveRoomPresence(id, currentRoomCode()); }catch(e){ console.error(e); }
 }
 
 async function leaveRoom(){
@@ -2257,70 +2139,28 @@ async function leaveRoom(){
   if(activeRound && !activeRound.ended_at){
     try{ await Store.endRound(activeRound.id, me.name); }catch(e){ console.error(e); }
   }
-  try{ await Store.deleteBoard(currentBoardId(), oldRoom); }catch(e){ console.error(e); }
+  try{ await Store.leaveRoomPresence(me.id, oldRoom); }catch(e){ console.error(e); }
   me.roomCode = null;
-  me.activeRoundId = null;
+  lastRoundId = null;
   activeRound = null;
   roundEntries = [];
   roundViewingId = null;
-  viewingId = currentBoardId();
   boards = {};
-  await Store.setMe(me);
+  rosterBaseline = null;
   await syncNow();
-  if(!boards[viewingId]) boards[viewingId] = {name:me.name, marks:{}, updated:Date.now(), roomCode:null};
-  try{ await Store.saveBoard(viewingId, boards[viewingId], null); }catch(e){ console.error(e); }
   renderAll();
-}
-
-function celebrate(){
-  document.getElementById("winOverlay").classList.add("show");
-  const accent = getComputedStyle(document.documentElement).getPropertyValue("--mark").trim();
-  const colors = [accent, "#ffffff", "#b8aed6"];
-  for(let n = 0; n < 60; n++){
-    const c = document.createElement("div");
-    c.className = "confetti";
-    c.style.left = Math.random()*100 + "vw";
-    c.style.background = colors[n % colors.length];
-    c.style.animationDuration = (1.6 + Math.random()*1.6) + "s";
-    c.style.animationDelay = (Math.random()*.6) + "s";
-    document.body.appendChild(c);
-    setTimeout(() => c.remove(), 4200);
-  }
 }
 
 /* ============================ events ============================ */
-document.getElementById("searchInput").addEventListener("input", e => {
-  query = e.target.value;
-  document.getElementById("searchWrap").classList.toggle("has-text", query.length > 0);
-  renderBoard();
-});
-document.getElementById("clearSearch").addEventListener("click", () => {
-  query = "";
-  const i = document.getElementById("searchInput");
-  i.value = "";
-  document.getElementById("searchWrap").classList.remove("has-text");
-  i.focus();
-  renderBoard();
-});
+// "Reset my card" only — All-mode round entries only (item 8: no default board to reset anymore).
 document.getElementById("resetBtn").addEventListener("click", async () => {
-  const allModeLive = Boolean(currentRoomCode() && activeRound && !activeRound.ended_at && activeRound.layout === "all");
-  if(allModeLive){
-    const entry = currentRoundEntry();
-    if(!entry || entry.finished_at) return; // a finished entry is permanently locked — no reset either
-    const next = {...entry, marks:{}, lines_completed:0, points:0, finished_at:null};
-    await Store.saveRoundEntry(next);
-    await syncNow();
-    renderAll();
-    return;
-  }
-  const b = myBoard();
-  b.marks = {};
-  b.updated = Date.now();
-  wasComplete = false;
+  const entry = currentRoundEntry();
+  if(!entry || entry.finished_at) return; // a finished entry is permanently locked — no reset either
+  const next = {...entry, marks:{}, lines_completed:0, points:0, finished_at:null};
+  await Store.saveRoundEntry(next);
+  await syncNow();
   renderAll();
-  try{ await Store.saveBoard(currentBoardId(), b, currentRoomCode()); }catch(e){ console.error(e); }
 });
-document.getElementById("leaveBtn").addEventListener("click", leaveBoard);
 document.getElementById("leaveRoomBtn").addEventListener("click", leaveRoom);
 document.getElementById("startGridBingoBtn").addEventListener("click", () => {
   document.getElementById("gridBingoConfig").dataset.open = "true";
@@ -2332,21 +2172,18 @@ document.getElementById("newGridBingoBtn").addEventListener("click", async () =>
     try{ await Store.endRound(activeRound.id, me.name); }catch(e){ console.error("round end failed", e); }
   }
   roundViewingId = null;
-  if(me.activeRoundId){ me.activeRoundId = null; await Store.setMe(me); }
+  lastRoundId = null;
   await syncNow();
   document.getElementById("gridBingoConfig").dataset.open = "true";
   buildGridBingoConfig();
   renderGridBingoControls();
 });
 document.getElementById("endGridBingoBtn").addEventListener("click", endGridBingo);
-document.getElementById("backToRoomBtn").addEventListener("click", async () => {
+document.getElementById("backToRoomBtn").addEventListener("click", () => {
   activeRound = null;
   roundEntries = [];
   roundViewingId = null;
-  if(me.activeRoundId){
-    me.activeRoundId = null;
-    await Store.setMe(me);
-  }
+  lastRoundId = null;
   renderAll();
 });
 document.getElementById("cancelGridBingoBtn").addEventListener("click", () => {
@@ -2363,13 +2200,13 @@ document.getElementById("teamSharedEditCheckbox").addEventListener("change", e =
 document.getElementById("muteBtn").addEventListener("click", async () => {
   me.muted = !me.muted;
   renderMuteButton();
-  await Store.setMe(me);
+  try{ await Store.saveProfile(me.id, {muted:me.muted}); }catch(e){ console.error("mute save failed", e); }
 });
 document.getElementById("zoomSlider").addEventListener("input", async e => {
   me.pageZoom = Number(e.target.value);
   applyPageZoom();
   renderZoomControl();
-  await Store.setMe(me);
+  try{ await Store.saveProfile(me.id, {page_zoom:me.pageZoom}); }catch(e){ console.error("zoom save failed", e); }
 });
 document.getElementById("copyRoomLink").addEventListener("click", async e => {
   const url = new URL(location.href);
@@ -2380,33 +2217,21 @@ document.getElementById("copyRoomLink").addEventListener("click", async e => {
     setTimeout(() => { e.currentTarget.textContent = "Copy invite link"; }, 1500);
   }catch(err){ console.error("copy failed", err); }
 });
-document.getElementById("backToMine").addEventListener("click", () => { viewingId = currentBoardId(); roundViewingId = null; renderAll(); });
-document.getElementById("openJoinRoomBtn").addEventListener("click", () => {
-  const panel = document.getElementById("joinRoomPanel");
-  panel.dataset.open = panel.dataset.open === "true" ? "false" : "true";
-  document.getElementById("inlineRoomErr").classList.remove("show");
-  renderJoinRoomBar();
-  if(panel.dataset.open === "true") document.getElementById("inlineRoomInput").focus();
-});
+document.getElementById("backToMine").addEventListener("click", () => { roundViewingId = null; renderAll(); });
 document.getElementById("inlineRoomInput").addEventListener("input", e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""); });
 document.getElementById("inlineJoinRoomBtn").addEventListener("click", async () => {
   document.getElementById("inlineRoomErr").classList.remove("show");
-  const ok = await switchToRoom(document.getElementById("inlineRoomInput").value, "inlineRoomErr");
-  if(ok) document.getElementById("joinRoomPanel").dataset.open = "false";
+  await switchToRoom(document.getElementById("inlineRoomInput").value, "inlineRoomErr");
 });
 document.getElementById("inlineCreateRoomBtn").addEventListener("click", async () => {
   document.getElementById("inlineRoomErr").classList.remove("show");
   const ok = await createRoomFlow();
-  if(ok) document.getElementById("joinRoomPanel").dataset.open = "false";
-  else setJoinError("Couldn't create a room. Try again.", "inlineRoomErr");
+  if(!ok) setJoinError("Couldn't create a room. Try again.", "inlineRoomErr");
 });
 document.getElementById("toggleRoundHistoryBtn").addEventListener("click", () => {
   const box = document.getElementById("roundHistoryList");
   box.dataset.open = box.dataset.open === "true" ? "false" : "true";
   renderRoomLeaderboard();
-});
-document.getElementById("winClose").addEventListener("click", () => {
-  document.getElementById("winOverlay").classList.remove("show");
 });
 document.getElementById("finishConfirmYes").addEventListener("click", async () => {
   const action = pendingFinishAction;
@@ -2433,81 +2258,37 @@ window.addEventListener("focus", async () => {
   renderAll();
 });
 
-document.getElementById("freePlayBtn").addEventListener("click", () => startSession(null));
-document.getElementById("roomModeBtn").addEventListener("click", () => {
-  document.getElementById("roomSetup").classList.add("show");
-  document.getElementById("roomInput").focus();
-});
-document.getElementById("joinRoomBtn").addEventListener("click", () => joinRoomFromModal());
-document.getElementById("createRoomBtn").addEventListener("click", () => createRoomFromModal());
-document.getElementById("nameInput").addEventListener("keydown", e => { if(e.key === "Enter") startSession(null); });
-document.getElementById("roomInput").addEventListener("input", e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""); });
-
 function setJoinError(message, targetId){
-  const error = document.getElementById(targetId || "nameErr");
+  const error = document.getElementById(targetId || "authErr");
   if(!error) return;
   error.textContent = message;
   error.classList.add("show");
-}
-
-async function startSession(roomCode){
-  const name = document.getElementById("nameInput").value.trim();
-  if(!name){ setJoinError("Enter a name to join."); return; }
-  const slug = name.toLowerCase().replace(/[^a-z0-9]/g,"") || "player";
-  me = {id: slug + "-" + Math.random().toString(36).slice(2,7), name, accent:"magenta", tileSize:"medium", pageZoom:100, muted:false, roomCode:roomCode || null};
-  viewingId = currentBoardId();
-  document.getElementById("nameModal").classList.remove("show");
-  applyAccent();
-  buildSwatches();
-  applyTileSize();
-  buildTileSizes();
-  applyPageZoom();
-  renderZoomControl();
-  renderMuteButton();
-  await Store.setMe(me);
-  await syncNow();
-  if(!boards[viewingId]) boards[viewingId] = {name, marks:{}, updated:Date.now(), roomCode:currentRoomCode()};
-  try{ await Store.saveBoard(viewingId, boards[viewingId], currentRoomCode()); }catch(e){ console.error(e); }
-  renderAll();
-  startPolling();
 }
 
 async function switchToRoom(code, errorTarget){
   const normalized = String(code || "").trim().toUpperCase();
   if(!/^[A-Z0-9]{4}$/.test(normalized)){ setJoinError("Room codes are 4 letters or numbers.", errorTarget); return false; }
   if(!(await Store.hasRoom(normalized))){ setJoinError("That room does not exist.", errorTarget); return false; }
+  try{ await Store.joinRoom(normalized, me.id); }catch(e){ setJoinError("Couldn't join that room. Try again.", errorTarget); return false; }
   me.roomCode = normalized;
-  viewingId = currentBoardId();
   boards = {};
   rosterBaseline = null;
-  await Store.setMe(me);
+  activeRound = null;
+  roundEntries = [];
   await syncNow();
-  if(!boards[viewingId]) boards[viewingId] = {name:me.name, marks:{}, updated:Date.now(), roomCode:normalized};
-  try{ await Store.saveBoard(viewingId, boards[viewingId], normalized); }catch(e){ console.error(e); }
   renderAll();
   return true;
 }
 
-async function joinRoomFromModal(){
-  const code = document.getElementById("roomInput").value;
-  if(!document.getElementById("nameInput").value.trim()){ setJoinError("Enter a name to join."); return; }
-  if(!/^[A-Z0-9]{4}$/.test(code)){ setJoinError("Enter a 4-character room code."); return; }
-  if(me){ await switchToRoom(code); return; }
-  if(!(await Store.hasRoom(code))){ setJoinError("That room does not exist."); return; }
-  await startSession(code);
-}
-
-// Shared by the name-entry modal (brand-new identity) and the inline Free Play
-// "Join or create a room" control (existing identity) — generates a room code and
-// either starts a fresh session in it or switches the current identity into it.
+// Generates a room code and joins the current (already-authenticated) identity into it — there's
+// no more "brand-new identity" case, login always happens first now (item 8).
 async function createRoomFlow(){
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   for(let attempt = 0; attempt < 5; attempt++){
     const code = Array.from({length:4}, () => alphabet[Math.floor(Math.random()*alphabet.length)]).join("");
     try{
       await Store.createRoom(code);
-      if(me) await switchToRoom(code); else await startSession(code);
-      return true;
+      return await switchToRoom(code);
     }catch(e){
       if(attempt === 4) return false;
     }
@@ -2515,31 +2296,96 @@ async function createRoomFlow(){
   return false;
 }
 
-async function createRoomFromModal(){
-  if(!document.getElementById("nameInput").value.trim()){ setJoinError("Enter a name to join."); return; }
-  const ok = await createRoomFlow();
-  if(!ok) setJoinError("Couldn't create a room. Try again.");
+/* ============================ auth ============================ */
+let authMode = "login";
+function renderAuthMode(){
+  const isSignup = authMode === "signup";
+  document.getElementById("authTitle").textContent = isSignup ? "Create an account" : "Log in";
+  document.getElementById("authDisplayNameRow").style.display = isSignup ? "" : "none";
+  document.getElementById("authSubmitBtn").textContent = isSignup ? "Sign up" : "Log in";
+  document.getElementById("authToggleModeBtn").textContent = isSignup ? "Already have an account? Log in" : "Need an account? Sign up";
+  document.getElementById("authErr").classList.remove("show");
+}
+document.getElementById("authToggleModeBtn").addEventListener("click", () => {
+  authMode = authMode === "signup" ? "login" : "signup";
+  renderAuthMode();
+});
+document.getElementById("authForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  await submitAuth();
+});
+
+async function submitAuth(){
+  document.getElementById("authErr").classList.remove("show");
+  const username = document.getElementById("authUsername").value.trim().toLowerCase();
+  const password = document.getElementById("authPassword").value;
+  if(!/^[a-z0-9_]{3,20}$/.test(username)){ setJoinError("Username: 3-20 letters, numbers, or underscores."); return; }
+  if(!password){ setJoinError("Enter a password."); return; }
+  const email = `${username}@rngbingo.local`;
+  const submitBtn = document.getElementById("authSubmitBtn");
+  submitBtn.disabled = true;
+  try{
+    if(authMode === "signup"){
+      const displayName = document.getElementById("authDisplayName").value.trim();
+      if(!displayName){ setJoinError("Enter a display name."); return; }
+      const {data, error} = await sbClient.auth.signUp({email, password});
+      if(error){
+        setJoinError(/already registered|already exists/i.test(error.message) ? "That username is taken." : error.message);
+        return;
+      }
+      const uid = data.user?.id;
+      let newSession = data.session;
+      if(!newSession){
+        // Project may require email confirmation — there's no real inbox for a fake address, so
+        // fall back to signing straight in (works when confirmation is actually off).
+        const signInResult = await sbClient.auth.signInWithPassword({email, password});
+        if(signInResult.error || !signInResult.data.session){
+          setJoinError("Account created, but couldn't log in automatically — try logging in.");
+          authMode = "login"; renderAuthMode();
+          return;
+        }
+        newSession = signInResult.data.session;
+      }
+      try{
+        await Store.createProfile({id:uid, username, display_name:displayName, accent:"magenta", tile_size:"medium", muted:false, page_zoom:100, created_at:Date.now()});
+      }catch(e){
+        setJoinError("Signup succeeded, but profile setup failed — try logging in.");
+        return;
+      }
+      await onLoggedIn(newSession);
+    } else {
+      const {data, error} = await sbClient.auth.signInWithPassword({email, password});
+      if(error){ setJoinError("Wrong username or password."); return; }
+      await onLoggedIn(data.session);
+    }
+  } finally {
+    submitBtn.disabled = false;
+  }
 }
 
-/* ============================ init ============================ */
-async function init(){
-  me = await Store.getMe();
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  stopPolling();
+  try{ await sbClient.auth.signOut(); }catch(e){ console.error(e); }
+  location.reload();
+});
 
-  if(!me){
-    const requestedRoom = roomCodeFromUrl();
-    if(requestedRoom){
-      document.getElementById("roomInput").value = requestedRoom;
-      document.getElementById("roomSetup").classList.add("show");
-    }
-    document.getElementById("nameModal").classList.add("show");
-    document.getElementById("nameInput").focus();
-    return;
-  }
-
-  me.muted = Boolean(me.muted);
-  const requestedRoom = roomCodeFromUrl();
-  if(requestedRoom && requestedRoom !== (me.roomCode || null)) await switchToRoom(requestedRoom);
-  viewingId = currentBoardId();
+async function onLoggedIn(newSession){
+  session = newSession;
+  accessToken = newSession.access_token;
+  const profile = await Store.getProfile(newSession.user.id);
+  me = {
+    id:newSession.user.id,
+    username:profile?.username || null,
+    name:profile?.display_name || profile?.username || "Player",
+    accent:profile?.accent || "magenta",
+    tileSize:profile?.tile_size || "medium",
+    muted:Boolean(profile?.muted),
+    pageZoom:Number(profile?.page_zoom) || 100,
+    roomCode:null
+  };
+  document.getElementById("authModal").classList.remove("show");
+  document.getElementById("accountBar").classList.add("show");
+  document.getElementById("accountName").textContent = me.name;
   applyAccent();
   buildSwatches();
   applyTileSize();
@@ -2547,11 +2393,23 @@ async function init(){
   applyPageZoom();
   renderZoomControl();
   renderMuteButton();
+  me.roomCode = await Store.getMyRoom(me.id);
+  const requestedRoom = roomCodeFromUrl();
+  if(requestedRoom && requestedRoom !== me.roomCode) await switchToRoom(requestedRoom);
   await syncNow();
-  if(!boards[viewingId]) boards[viewingId] = {name:me.name, marks:{}, updated:Date.now(), roomCode:currentRoomCode()};
-  wasComplete = countDone(boards[viewingId]) === TOTAL;
   renderAll();
   startPolling();
+}
+
+/* ============================ init ============================ */
+async function init(){
+  const {data} = await sbClient.auth.getSession();
+  if(data.session){
+    await onLoggedIn(data.session);
+  } else {
+    document.getElementById("authModal").classList.add("show");
+    document.getElementById("authUsername").focus();
+  }
   setInterval(paintSyncState, 1000);
 }
 
