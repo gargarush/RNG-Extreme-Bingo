@@ -169,6 +169,7 @@
   .team-assign.show{display:grid;}
   .team-assign-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;}
   .team-assign-row .nm{color:var(--ink);}
+  .you-inline{color:var(--mark);font-weight:700;font-size:11px;letter-spacing:.03em;margin-left:5px;}
   .grid-bingo-status{display:none;background:var(--panel);border:1px solid var(--panel-line);border-left:3px solid var(--secondary);border-radius:9px;padding:10px 14px;margin:-8px 0 16px;color:var(--dim);font-size:13px;}
   .grid-bingo-status.show{display:block;}
   .grid-bingo-status strong{color:var(--ink);}
@@ -1190,6 +1191,18 @@ async function syncNow(){
         if(startedTransition && activeRound.started_by && activeRound.started_by !== me.name){
           showToast(`${activeRound.started_by} started a ${roundSizeLabel(activeRound)} ${roundModeLabel(activeRound, true)} round`);
         }
+        // Team roster toast — fires for EVERY player including whoever started the round (unlike
+        // the toast above, which excludes them), since even the starter doesn't know their own
+        // random-formation team assignment until now. Same trigger point, shown only about their
+        // own team, teammates listed in round.teams member order (not resorted), self excluded.
+        if(startedTransition && activeRound.teams){
+          const myTeamKey = myTeamId();
+          if(myTeamKey){
+            const teamLabel = myTeamKey === "team-A" ? "Team A" : "Team B";
+            const teammates = (activeRound.teams[myTeamKey] || []).filter(pid => pid !== me.id).map(pid => teamMemberName(pid));
+            showToast(teammates.length ? `You're on ${teamLabel} with: ${teammates.join(", ")}` : `You're on ${teamLabel} (no teammates)`);
+          }
+        }
         const sameRound = previousRoundId === nextRoundId && Boolean(nextRoundId);
         const endedTransition = sameRound && previousRound && !previousRound.ended_at && activeRound && activeRound.ended_at;
         if(endedTransition && activeRound.ended_by && activeRound.ended_by !== me.name){
@@ -1456,7 +1469,8 @@ function renderRoomLeaderboard(){
       const left = !presentIds.has(row.player_id);
       const el = document.createElement("div");
       el.className = "room-leaderboard-row" + (left ? " left" : "");
-      el.innerHTML = `<span class="nm">${escapeHtml(row.player_name)}${rank <= 3 ? medalBadge(rank) : ""}</span><span class="pts">${row.points} pts${left ? `<span class="left-icon-inline">${EXIT_ICON}</span>` : ""}</span>`;
+      const isMe = row.player_id === me.id;
+      el.innerHTML = `<span class="nm">${escapeHtml(row.player_name)}${rank <= 3 ? medalBadge(rank) : ""}${isMe ? '<span class="you-inline">(YOU)</span>' : ""}</span><span class="pts">${row.points} pts${left ? `<span class="left-icon-inline">${EXIT_ICON}</span>` : ""}</span>`;
       list.appendChild(el);
     });
   }
@@ -1564,7 +1578,7 @@ function buildTeamAssignRows(members){
       btn.addEventListener("click", () => { gridBingoConfig.manualTeams[pid] = value; buildGridBingoConfig(); });
       opts.appendChild(btn);
     });
-    row.innerHTML = `<span class="nm">${escapeHtml(board.name)}</span>`;
+    row.innerHTML = `<span class="nm">${escapeHtml(board.name)}${pid === me.id ? '<span class="you-inline">(YOU)</span>' : ""}</span>`;
     row.appendChild(opts);
     box.appendChild(row);
   });
@@ -1988,11 +2002,10 @@ function renderRoundBoard(){
     // individual — round.teams[item.player_id] is the member id list for this team's entry.
     const members = activeRound.teams && activeRound.teams[item.player_id];
     const membersLine = members ? `<div class="team-members">${members.map(pid => escapeHtml(teamMemberName(pid))).join(", ")}</div>` : "";
-    // Live MVP (item 2): computed on every render now, not just after the round ends — it already
-    // degrades correctly with no finisher yet. Still gated on `viewable`, not just `ended_at`, so
-    // an opponent whose board is currently hidden from you doesn't leak "who's been active" ahead
-    // of the visibility rule that's supposed to hide their progress in the first place.
-    const mvpName = (members && viewable) ? computeTeamMVP(item, activeRound) : null;
+    // Live MVP, always shown (reversing the earlier viewable-gating): computed on every render for
+    // both teams regardless of card_visibility, including "Hidden" — computeTeamMVP() already
+    // degrades correctly with no finisher yet, so this is safe to show unconditionally.
+    const mvpName = members ? computeTeamMVP(item, activeRound) : null;
     const mvpLine = mvpName ? `<div class="team-mvp">MVP: ${escapeHtml(mvpName)}</div>` : "";
     const inner = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}${badge}${visIcon}</span></div>${membersLine}<div class="bingo-score">${score}</div>${mvpLine}`;
     if(viewable){
