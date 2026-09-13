@@ -297,8 +297,14 @@
   .modal-card.wide{max-width:560px;max-height:82vh;display:flex;flex-direction:column;position:relative;}
   .modal-card.wide .history-modal-scroll{overflow-y:auto;min-height:0;}
   .modal-card.wide .round-history{margin-top:0;}
-  .modal-sticky-close{position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:8px;background:var(--panel);border:1px solid var(--panel-line);color:var(--dim);font-size:18px;line-height:1;cursor:pointer;font-family:inherit;z-index:5;}
-  .modal-sticky-close:hover{border-color:var(--mark);color:var(--ink);}
+  /* Qualified as ".modal-card button.modal-sticky-close" (not just ".modal-sticky-close") on
+     purpose: the generic ".modal-card button" rule below is class+type (0,1,1), which beats a
+     bare single-class selector (0,1,0) regardless of source order — that mismatch was the actual
+     bug (item 2), rendering this as a full-width var(--mark)-colored bar instead of a small corner
+     icon. Every property the generic rule sets (width/background/padding/border/color/font-weight)
+     is re-specified here so nothing leaks through. */
+  .modal-card button.modal-sticky-close{position:absolute;top:14px;right:14px;width:30px;height:30px;padding:0;border-radius:8px;background:var(--panel);border:1px solid var(--panel-line);color:var(--dim);font-weight:400;font-size:18px;line-height:1;cursor:pointer;font-family:inherit;z-index:5;}
+  .modal-card button.modal-sticky-close:hover{border-color:var(--mark);color:var(--ink);}
   .history-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;}
   .history-stats .stat-chip{background:#1a1526;border:1px solid var(--panel-line);border-radius:8px;padding:8px 12px;font-size:12.5px;color:var(--dim);}
   .history-stats .stat-chip b{color:var(--ink);}
@@ -366,6 +372,8 @@
   .public-rooms-head{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-bottom:8px;}
   .public-rooms-list{display:flex;flex-direction:column;gap:8px;}
   .public-rooms-list .empty{font-size:12.5px;color:var(--dim);}
+  .personal-history-inline{border-top:1px solid var(--panel-line);padding-top:12px;margin-top:12px;}
+  .personal-history-inline .round-history{margin-top:0;}
   .public-room-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#1a1526;border:1px solid var(--panel-line);border-radius:10px;padding:10px 12px;}
   .public-room-info{display:flex;flex-direction:column;gap:2px;min-width:0;overflow:hidden;}
   .public-room-code{font-weight:700;letter-spacing:.05em;}
@@ -403,7 +411,7 @@
 
   <div class="zoom-bar" id="zoomBar">
     <label for="zoomSlider">Zoom</label>
-    <input type="range" id="zoomSlider" min="80" max="150" step="10" value="100">
+    <input type="range" id="zoomSlider" min="80" max="150" step="2" value="100">
     <span id="zoomValue">100%</span>
   </div>
 
@@ -464,6 +472,48 @@
     <div class="public-rooms-section">
       <div class="public-rooms-head">Public rooms</div>
       <div class="public-rooms-list" id="publicRoomsList"></div>
+    </div>
+    <!-- item 4: the same Personal History content as #historyModal below, rendered inline instead
+         of behind a button+modal, for the one screen (outside a room) that has room for it. Every
+         element here shares an id with its modal counterpart plus an "Inline" suffix, and every
+         render/filter function loops over both suffixes — see renderPersonalHistoryModal() et al. —
+         so this is purely a second target container, never a second copy of the logic. -->
+    <div class="personal-history-inline">
+      <div class="public-rooms-head">Your history</div>
+      <div class="history-stats" id="historyStatsInline"></div>
+      <div class="history-winbar" id="historyWinBarInline"></div>
+      <div class="history-filters">
+        <div class="filter-field">
+          <p class="settings-label">Room</p>
+          <select id="historyRoomFilterInline"></select>
+        </div>
+        <div class="filter-field">
+          <p class="settings-label">Opponent</p>
+          <select id="historyOpponentFilterInline"></select>
+        </div>
+        <div class="filter-field">
+          <p class="settings-label">Result</p>
+          <select id="historyResultFilterInline">
+            <option value="">All Results</option>
+            <option value="win">Wins Only</option>
+            <option value="loss">Losses Only</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <p class="settings-label">Game Mode</p>
+          <select id="historyGameModeFilterInline">
+            <option value="">All Modes</option>
+            <option value="grid">Grid</option>
+            <option value="all">All</option>
+            <option value="tictactoe">Tic-Tac-Toe</option>
+          </select>
+        </div>
+      </div>
+      <label class="history-mvp-toggle">
+        <input type="checkbox" id="historyMvpFilterInline">
+        MVP rounds only
+      </label>
+      <div class="round-history show" id="personalHistoryListInline"><div class="empty" style="padding:12px;">Loading…</div></div>
     </div>
   </div>
 
@@ -1122,6 +1172,10 @@ let publicRoomsList = [];
 let personalHistory = [];
 let personalHistoryNames = {};
 let historyFilters = {room:"", opponent:"", result:"", mvpOnly:false, gameMode:""};
+// Guards the join-screen inline history dashboard (item 4) so it loads once per visit to that
+// screen rather than on every renderJoinRoomBar() call (i.e. every sync tick) — reset to false by
+// leaveRoom() so returning to the join screen after a round always shows it fresh.
+let personalHistoryInlineLoaded = false;
 let roomLeaderboard = [];
 let roundHistory = [];
 // "<entryPlayerId>:<weaponName>" -> last-seen blocked_attempts timestamp (item 5), so a sync only
@@ -1604,6 +1658,12 @@ async function syncNow(){
         }
       }
       ticTacToeClaimsSeen.set(activeRound.id, nextClaims);
+      // Safety net (root-cause fix): every client re-derives "is this round actually over" from the
+      // claims it just fetched, on every sync — not just the one client whose claim happened to
+      // complete a line. Catches a win/draw that the acting client's own post-claim check missed
+      // (tab closed, network drop, or a silently-failed claimRound/endRound call) by having any
+      // other syncing client's own check land it instead. See checkTicTacToeRoundEnd for the story.
+      if(!activeRound.ended_at) activeRound = await checkTicTacToeRoundEnd(activeRound, nextClaims);
     }
     const nextRoundId = activeRound?.id || null;
     // Round start/end toasts — same "previous vs current" diff shape as the roster join/leave
@@ -1872,6 +1932,12 @@ function renderJoinRoomBar(){
   const show = !currentRoomCode();
   document.getElementById("joinRoomBar").classList.toggle("show", show);
   document.getElementById("joinRoomPanel").classList.toggle("show", show);
+  // item 4: lazy-load the inline history dashboard the first time the join screen appears (after
+  // login, or after leaveRoom() resets the flag) rather than on every sync tick this bar re-renders.
+  if(show && !personalHistoryInlineLoaded){
+    personalHistoryInlineLoaded = true;
+    loadAndRenderPersonalHistory();
+  }
 }
 
 // Private rooms never appear here — the list only ever contains what loadPublicRoomsList()
@@ -1956,8 +2022,10 @@ function renderRoomLeaderboard(){
 // Same round-history-item visual style as renderRoomLeaderboard()'s history list above, just
 // scoped to one person across every room instead of one room (item 2) — so each item also needs
 // its own date and room code, which the room-scoped version never had to show.
-function renderPersonalHistory(items){
-  const list = document.getElementById("personalHistoryList");
+// `suffix` picks the target container: "" is the History modal, "Inline" is the join-screen
+// dashboard (item 4) — the same two ids every history render/filter function below targets.
+function renderPersonalHistory(items, suffix){
+  const list = document.getElementById("personalHistoryList" + suffix);
   if(items.length === 0){
     const message = personalHistory.length === 0 ? "No rounds played yet." : "No rounds match these filters.";
     list.innerHTML = `<div class="empty" style="padding:12px;">${message}</div>`;
@@ -1998,37 +2066,58 @@ function renderPersonalHistory(items){
     list.appendChild(item);
   });
 }
-function renderHistoryStats(stats){
-  const box = document.getElementById("historyStats");
+function renderHistoryStats(stats, suffix){
+  const box = document.getElementById("historyStats" + suffix);
   const total = stats.wins + stats.losses;
   const record = `${stats.wins}W – ${stats.losses}L` + (total > 0 ? ` (${stats.winPct}%)` : "");
   box.innerHTML = `<div class="stat-chip">Record: <b>${escapeHtml(record)}</b></div>` +
     `<div class="stat-chip">MVP in <b>${stats.mvp}</b> round${stats.mvp === 1 ? "" : "s"}</div>`;
   // Empty/neutral bar when wins+losses is 0 (item 4) — no segments at all, just the container's
   // own dim background, rather than dividing by zero.
-  const winBar = document.getElementById("historyWinBar");
+  const winBar = document.getElementById("historyWinBar" + suffix);
   winBar.innerHTML = total > 0
     ? `<div class="win-seg" style="width:${(stats.wins / total) * 100}%"></div><div class="loss-seg" style="width:${(stats.losses / total) * 100}%"></div>`
     : "";
 }
+// Loops over both targets (modal + join-screen inline dashboard, item 4) so the two never drift —
+// they share one historyFilters object, so keeping both in sync on every render is the simplest
+// correct behavior rather than only refreshing whichever one happened to trigger the change.
+const HISTORY_RENDER_TARGETS = ["", "Inline"];
 function renderHistoryFilterOptions(){
   const {rooms, opponents} = buildHistoryFilterOptions();
-  const roomSelect = document.getElementById("historyRoomFilter");
-  roomSelect.innerHTML = '<option value="">All Rooms</option>' + rooms.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
-  roomSelect.value = historyFilters.room;
-  const oppSelect = document.getElementById("historyOpponentFilter");
-  oppSelect.innerHTML = '<option value="">All Opponents</option>' + opponents.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.name)}</option>`).join("");
-  oppSelect.value = historyFilters.opponent;
-  document.getElementById("historyResultFilter").value = historyFilters.result;
-  document.getElementById("historyMvpFilter").checked = historyFilters.mvpOnly;
-  document.getElementById("historyGameModeFilter").value = historyFilters.gameMode;
+  HISTORY_RENDER_TARGETS.forEach(suffix => {
+    const roomSelect = document.getElementById("historyRoomFilter" + suffix);
+    roomSelect.innerHTML = '<option value="">All Rooms</option>' + rooms.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
+    roomSelect.value = historyFilters.room;
+    const oppSelect = document.getElementById("historyOpponentFilter" + suffix);
+    oppSelect.innerHTML = '<option value="">All Opponents</option>' + opponents.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.name)}</option>`).join("");
+    oppSelect.value = historyFilters.opponent;
+    document.getElementById("historyResultFilter" + suffix).value = historyFilters.result;
+    document.getElementById("historyMvpFilter" + suffix).checked = historyFilters.mvpOnly;
+    document.getElementById("historyGameModeFilter" + suffix).value = historyFilters.gameMode;
+  });
 }
 // The single re-render entry point once filters change (item 5) — both the stats (item 4) and the
 // list itself narrow to the same filtered set, combined with AND.
 function renderPersonalHistoryModal(){
   const filtered = filteredPersonalHistory();
-  renderHistoryStats(computeHistoryStats(filtered));
-  renderPersonalHistory(filtered);
+  const stats = computeHistoryStats(filtered);
+  HISTORY_RENDER_TARGETS.forEach(suffix => {
+    renderHistoryStats(stats, suffix);
+    renderPersonalHistory(filtered, suffix);
+  });
+}
+// Shared by the History modal's open handler and the join-screen inline dashboard's lazy-load
+// (item 4) — the exact same load-then-render sequence, just triggered from two different places.
+async function loadAndRenderPersonalHistory(){
+  try{
+    personalHistory = await loadPersonalHistory();
+  }catch(e){
+    console.error("personal history load failed", e);
+    personalHistory = [];
+  }
+  renderHistoryFilterOptions();
+  renderPersonalHistoryModal();
 }
 
 function renderContextBar(){
@@ -2523,6 +2612,42 @@ function wouldWinTicTacToe(name){
   const claims = {...(activeRound.claims || {}), [name]:{side:mySide}};
   return ticTacToeWinningSide(activeRound.shared_card, claims, Number(activeRound.grid_size)) === mySide;
 }
+// Root-cause fix for missed wins: this used to be inline at the bottom of claimSquare(), so a
+// winning line (or a full grid) only ever got turned into an ended round if the ONE client whose
+// claim produced it ran this exact code to completion — if that tab closed, lost network, or its
+// claimRound()/endRound() call errored (previously swallowed by a bare catch(e){console.error}),
+// nobody else ever re-checked the same claims for a win. Every other client's syncNow() just
+// applied the fresh claims and rendered, trusting the actor had already ended it — a real completed
+// line could sit in the data forever with winner_id still null. Pulling this out into a function
+// called from BOTH claimSquare() (for a snappy end-of-round on the client that made the winning
+// move) AND syncNow() (as a safety net every client re-runs on every poll, see below) makes
+// "is this round actually over" a property re-derived from the current claims by every observer,
+// not a one-shot side effect tied to whichever claim happened to complete it. claimRound/endRound
+// are both idempotent (guarded by winner_id/ended_at is.null filters server-side), so any number of
+// clients racing to call this concurrently is harmless — at most one write ever lands.
+async function checkTicTacToeRoundEnd(round, claims){
+  if(!round || round.ended_at) return {...round, claims};
+  const size = Number(round.grid_size);
+  const winningSide = ticTacToeWinningSide(round.shared_card, claims, size);
+  if(winningSide){
+    try{
+      const landed = await Store.claimRound(round.id, winningSide, me.name);
+      if(landed) return {...round, claims, winner_id:winningSide, ended_at:Date.now(), ended_by:me.name};
+    }catch(e){ console.error("round auto-end (win) failed", e); }
+  } else if(Object.keys(claims).length >= size * size && (!round.take_backs || round.draw_on_full)){
+    // Full grid, no line (item 6): with take-backs off this is always a real draw — nothing can
+    // change once every square is locked. With take-backs on, a full grid does NOT guarantee the
+    // game is over (a steal could still complete a line afterward), so this only auto-ends when
+    // draw_on_full is explicitly opted into; otherwise the round just keeps going until a line
+    // forms or someone manually ends it. Reuses the existing "No winner" ended-round path as-is:
+    // ended_at set, winner_id stays null, dnf stays false.
+    try{
+      await Store.endRound(round.id, me.name);
+      return {...round, claims, ended_at:Date.now(), ended_by:me.name};
+    }catch(e){ console.error("round auto-end (draw) failed", e); }
+  }
+  return {...round, claims};
+}
 // Single choke point for every square tap. Unlike Grid Bingo's own editable-flag-bakes-in-the-lock
 // approach, EVERY square stays clickable here regardless of ownership (see renderTicTacToeRound's
 // editable calc) — the permission logic lives entirely in here instead, mirroring how Grid Bingo's
@@ -2572,23 +2697,7 @@ async function claimSquare(name){
     renderAll();
     return;
   }
-  activeRound = {...activeRound, claims};
-  const size = Number(activeRound.grid_size);
-  const winningSide = ticTacToeWinningSide(activeRound.shared_card, claims, size);
-  if(winningSide){
-    // Same instant-end behavior Grid Bingo's race mode already has for <=2 entries — a TTT round
-    // always has exactly 2 entries (one per side), so this is always the right path, never the
-    // >2-player claimWinner-without-ending one.
-    try{ await Store.claimRound(activeRound.id, winningSide, me.name); }catch(e){ console.error(e); }
-  } else if(Object.keys(claims).length >= size * size && (!activeRound.take_backs || activeRound.draw_on_full)){
-    // Full grid, no line (item 6): with take-backs off this is always a real draw — nothing can
-    // change once every square is locked. With take-backs on, a full grid does NOT guarantee the
-    // game is over (a steal could still complete a line afterward), so this only auto-ends when
-    // draw_on_full is explicitly opted into; otherwise the round just keeps going until a line
-    // forms or someone manually ends it. Reuses the existing "No winner" ended-round path as-is:
-    // ended_at set, winner_id stays null, dnf stays false.
-    try{ await Store.endRound(activeRound.id, me.name); }catch(e){ console.error("round auto-end failed", e); }
-  }
+  activeRound = await checkTicTacToeRoundEnd(activeRound, claims);
   await syncNow();
   renderAll();
 }
@@ -3031,6 +3140,10 @@ async function leaveRoom(){
   roundViewingId = null;
   boards = {};
   rosterBaseline = null;
+  // Force the inline history dashboard (item 4) to reload once we're back on the join screen —
+  // any rounds just played in that room belong in it, and renderJoinRoomBar()'s lazy-load guard
+  // only fires the first time the join screen appears, not on every return to it.
+  personalHistoryInlineLoaded = false;
   await syncNow();
   renderAll();
 }
@@ -3328,14 +3441,7 @@ document.getElementById("historyBtn").addEventListener("click", async () => {
   document.getElementById("historyStats").innerHTML = "";
   document.getElementById("historyWinBar").innerHTML = "";
   historyFilters = {room:"", opponent:"", result:"", mvpOnly:false, gameMode:""};
-  try{
-    personalHistory = await loadPersonalHistory();
-  }catch(e){
-    console.error("personal history load failed", e);
-    personalHistory = [];
-  }
-  renderHistoryFilterOptions();
-  renderPersonalHistoryModal();
+  await loadAndRenderPersonalHistory();
 });
 document.getElementById("closeHistoryBtn").addEventListener("click", () => {
   document.getElementById("historyModal").classList.remove("show");
@@ -3345,26 +3451,31 @@ document.getElementById("closeHistoryBtn").addEventListener("click", () => {
 document.getElementById("closeHistoryBtnTop").addEventListener("click", () => {
   document.getElementById("historyModal").classList.remove("show");
 });
-document.getElementById("historyRoomFilter").addEventListener("change", e => {
-  historyFilters.room = e.target.value;
-  renderPersonalHistoryModal();
-});
-document.getElementById("historyOpponentFilter").addEventListener("change", e => {
-  historyFilters.opponent = e.target.value;
-  renderPersonalHistoryModal();
-});
-document.getElementById("historyResultFilter").addEventListener("change", e => {
-  historyFilters.result = e.target.value;
-  renderPersonalHistoryModal();
-});
-document.getElementById("historyMvpFilter").addEventListener("change", e => {
-  historyFilters.mvpOnly = e.target.checked;
-  renderPersonalHistoryModal();
-});
-document.getElementById("historyGameModeFilter").addEventListener("change", e => {
-  historyFilters.gameMode = e.target.value;
-  renderPersonalHistoryModal();
-});
+// Wired once per suffix (modal + inline dashboard, item 4) — both sets of controls mutate the same
+// shared historyFilters object and trigger the same shared re-render, so they always stay in sync.
+function wireHistoryFilterListeners(suffix){
+  document.getElementById("historyRoomFilter" + suffix).addEventListener("change", e => {
+    historyFilters.room = e.target.value;
+    renderPersonalHistoryModal();
+  });
+  document.getElementById("historyOpponentFilter" + suffix).addEventListener("change", e => {
+    historyFilters.opponent = e.target.value;
+    renderPersonalHistoryModal();
+  });
+  document.getElementById("historyResultFilter" + suffix).addEventListener("change", e => {
+    historyFilters.result = e.target.value;
+    renderPersonalHistoryModal();
+  });
+  document.getElementById("historyMvpFilter" + suffix).addEventListener("change", e => {
+    historyFilters.mvpOnly = e.target.checked;
+    renderPersonalHistoryModal();
+  });
+  document.getElementById("historyGameModeFilter" + suffix).addEventListener("change", e => {
+    historyFilters.gameMode = e.target.value;
+    renderPersonalHistoryModal();
+  });
+}
+HISTORY_RENDER_TARGETS.forEach(wireHistoryFilterListeners);
 
 /* ============================ settings ============================ */
 function showSettingsError(targetId, message){
