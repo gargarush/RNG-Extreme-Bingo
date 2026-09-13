@@ -8,7 +8,7 @@
   :root{
     --bg:#16101f;--panel:#1e1730;--panel-line:#2f2549;--ink:#ece6f7;--dim:#b8aed6;
     --primary:#ff9d4d;--secondary:#4dc4ff;--melee:#ff4d6a;--utility:#4dffa6;
-    --mark:#ff2ee0;--mark-soft:rgba(255,46,224,.25);--tile-min:112px;--tile-icon:30px;--tile-name:10.5px;
+    --mark:#2ee0ff;--mark-soft:rgba(46,224,255,.25);--tile-min:112px;--tile-icon:30px;--tile-name:10.5px;
   }
   *{box-sizing:border-box;}
   body{
@@ -282,6 +282,11 @@
   .modal-card{background:var(--panel);border:1px solid var(--panel-line);border-radius:16px;padding:32px;max-width:400px;width:100%;}
   .modal-card.wide{max-width:560px;max-height:82vh;overflow-y:auto;}
   .modal-card.wide .round-history{margin-top:0;}
+  .history-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
+  .history-stats .stat-chip{background:#1a1526;border:1px solid var(--panel-line);border-radius:8px;padding:8px 12px;font-size:12.5px;color:var(--dim);}
+  .history-stats .stat-chip b{color:var(--ink);}
+  .history-filters{display:flex;gap:10px;margin-bottom:14px;}
+  .history-filters select{flex:1;min-width:0;background:#14101f;border:1px solid var(--panel-line);color:var(--ink);padding:9px 10px;border-radius:8px;font-size:13px;font-family:inherit;}
   .modal-card h3{margin:0 0 8px;font-size:22px;font-weight:800;}
   .modal-card p{margin:0 0 20px;color:var(--dim);font-size:14px;line-height:1.5;}
   .modal-card input{
@@ -534,6 +539,11 @@
   <div class="modal-card wide">
     <h3>Your Round History</h3>
     <p>Every round you've played, across every room.</p>
+    <div class="history-stats" id="historyStats"></div>
+    <div class="history-filters">
+      <select id="historyRoomFilter"></select>
+      <select id="historyOpponentFilter"></select>
+    </div>
     <div class="round-history show" id="personalHistoryList"></div>
     <button id="closeHistoryBtn" class="auth-toggle-btn" type="button">Close</button>
   </div>
@@ -1008,6 +1018,7 @@ let roomIsPublic = false;
 let publicRoomsList = [];
 let personalHistory = [];
 let personalHistoryNames = {};
+let historyFilters = {room:"", opponent:""};
 let roomLeaderboard = [];
 let roundHistory = [];
 // "<entryPlayerId>:<weaponName>" -> last-seen blocked_attempts timestamp (item 5), so a sync only
@@ -1096,6 +1107,61 @@ function myEntryInRound(round, entries){
     return entries.find(e => e.player_id === teamKey) || null;
   }
   return entries.find(e => e.player_id === me.id) || null;
+}
+// Shared by rendering (item: labeling) and the opponent filter (item 5) — a team round's
+// teammates are your own team's OTHER members, opponents are the other team entirely; a
+// solo/individual round has no teammates, only opponents (the round's other entries).
+function roundMatchInfo(round, entries, myEntry){
+  if(round.teams){
+    const myTeamKey = Object.keys(round.teams).find(k => (round.teams[k] || []).includes(me.id));
+    const otherTeamKey = Object.keys(round.teams).find(k => k !== myTeamKey);
+    const teammates = (round.teams[myTeamKey] || []).filter(pid => pid !== me.id).map(pid => ({id:pid, name:personalHistoryName(pid)}));
+    const opponents = (round.teams[otherTeamKey] || []).map(pid => ({id:pid, name:personalHistoryName(pid)}));
+    return {teammates, opponents};
+  }
+  const opponents = entries.filter(e => e !== myEntry).map(e => ({id:e.player_id, name:e.player_name}));
+  return {teammates:[], opponents};
+}
+// Win/loss (item 4): any round with winner_id set counts, points mode included now that a
+// points-mode round can also get a winner_id (first to finish). MVP: team rounds only, via
+// computeTeamMVPId() so it's compared by uid, never by a display name that two players might share.
+function computeHistoryStats(items){
+  let wins = 0, losses = 0, mvp = 0;
+  items.forEach(({round, entries}) => {
+    if(round.dnf) return;
+    const myEntry = myEntryInRound(round, entries);
+    if(!myEntry) return;
+    if(round.winner_id){
+      if(round.winner_id === myEntry.player_id) wins++; else losses++;
+    }
+    if(round.teams && computeTeamMVPId(myEntry, round) === me.id) mvp++;
+  });
+  const total = wins + losses;
+  return {wins, losses, winPct:total > 0 ? Math.round((wins / total) * 100) : null, mvp};
+}
+function filteredPersonalHistory(){
+  return personalHistory.filter(({round, entries}) => {
+    if(historyFilters.room && round.room_code !== historyFilters.room) return false;
+    if(historyFilters.opponent){
+      const myEntry = myEntryInRound(round, entries);
+      const {opponents} = roundMatchInfo(round, entries, myEntry);
+      if(!opponents.some(o => o.id === historyFilters.opponent)) return false;
+    }
+    return true;
+  });
+}
+function buildHistoryFilterOptions(){
+  const rooms = new Set();
+  const opponents = new Map();
+  personalHistory.forEach(({round, entries}) => {
+    rooms.add(round.room_code);
+    const myEntry = myEntryInRound(round, entries);
+    roundMatchInfo(round, entries, myEntry).opponents.forEach(o => opponents.set(o.id, o.name));
+  });
+  return {
+    rooms:Array.from(rooms).sort(),
+    opponents:Array.from(opponents, ([id, name]) => ({id, name})).sort((a, b) => a.name.localeCompare(b.name))
+  };
 }
 // Keep this simple (item 2): a direct round_entries lookup for solo/individual rounds, plus a
 // client-side filter over every ended team round for whether this player's uid is in round.teams
@@ -1196,7 +1262,10 @@ function computeRoundPoints(round, entryPlayerId, tiles, lines, full){
 // who marked the card's final tile. Handicap pre-marks now carry an explicit HANDICAP_PLAYER_ID
 // sentinel in marked_by rather than no entry at all, so every loop below excludes it explicitly —
 // it must never appear as a phantom "player" in the MVP calculation.
-function computeTeamMVP(entry, round){
+// Same logic as computeTeamMVP() below, but returns the winning pid itself rather than a resolved
+// display name (item 4) — lets a caller compare directly against me.id without risking a false
+// match between two players who happen to share a display name.
+function computeTeamMVPId(entry, round){
   const markedBy = entry.marked_by || {};
   const tileCounts = new Map();
   Object.values(markedBy).forEach(m => {
@@ -1237,7 +1306,11 @@ function computeTeamMVP(entry, round){
       mvp = stat;
     }
   });
-  return mvp ? teamMemberName(mvp.pid) : null;
+  return mvp ? mvp.pid : null;
+}
+function computeTeamMVP(entry, round){
+  const pid = computeTeamMVPId(entry, round);
+  return pid ? teamMemberName(pid) : null;
 }
 function canViewRoundEntry(entry){
   if(!activeRound || !entry) return false;
@@ -1725,33 +1798,25 @@ function renderRoomLeaderboard(){
 // Same round-history-item visual style as renderRoomLeaderboard()'s history list above, just
 // scoped to one person across every room instead of one room (item 2) — so each item also needs
 // its own date and room code, which the room-scoped version never had to show.
-function renderPersonalHistory(){
+function renderPersonalHistory(items){
   const list = document.getElementById("personalHistoryList");
-  if(personalHistory.length === 0){
-    list.innerHTML = '<div class="empty" style="padding:12px;">No rounds played yet.</div>';
+  if(items.length === 0){
+    const message = personalHistory.length === 0 ? "No rounds played yet." : "No rounds match these filters.";
+    list.innerHTML = `<div class="empty" style="padding:12px;">${message}</div>`;
     return;
   }
   list.innerHTML = "";
-  personalHistory.forEach(({round, entries}) => {
+  items.forEach(({round, entries}) => {
     const item = document.createElement("div");
     item.className = "round-history-item";
     const myEntry = myEntryInRound(round, entries);
-    // Team rounds (item: labeling) split into your own teammates ("With") and the opposing
-    // team ("vs"), both via round.teams — never the entry's own player_name, which for a team
-    // is just the literal "Team A"/"Team B" string. Solo/individual rounds have no teammate,
-    // only an opponent, so that line is "vs" instead of "With".
+    // Team rounds split into your own teammates ("With") and the opposing team ("vs") — never
+    // the entry's own player_name, which for a team is just the literal "Team A"/"Team B" string.
+    // Solo/individual rounds have no teammate, only an opponent, so that line is "vs" not "With".
+    const {teammates, opponents} = roundMatchInfo(round, entries, myEntry);
     const matchSpans = [];
-    if(round.teams){
-      const myTeamKey = Object.keys(round.teams).find(k => (round.teams[k] || []).includes(me.id));
-      const otherTeamKey = Object.keys(round.teams).find(k => k !== myTeamKey);
-      const teammates = (round.teams[myTeamKey] || []).filter(pid => pid !== me.id).map(pid => personalHistoryName(pid));
-      const opponents = (round.teams[otherTeamKey] || []).map(pid => personalHistoryName(pid));
-      if(teammates.length) matchSpans.push(`<span>With: ${escapeHtml(teammates.join(", "))}</span>`);
-      if(opponents.length) matchSpans.push(`<span>vs: ${escapeHtml(opponents.join(", "))}</span>`);
-    } else {
-      const opponents = entries.filter(e => e !== myEntry).map(e => e.player_name);
-      if(opponents.length) matchSpans.push(`<span>vs: ${escapeHtml(opponents.join(", "))}</span>`);
-    }
+    if(teammates.length) matchSpans.push(`<span>With: ${escapeHtml(teammates.map(t => t.name).join(", "))}</span>`);
+    if(opponents.length) matchSpans.push(`<span>vs: ${escapeHtml(opponents.map(o => o.name).join(", "))}</span>`);
     if(matchSpans.length === 0) matchSpans.push('<span>Solo</span>');
     const dateMs = round.ended_at || round.created_at;
     const dateLabel = dateMs ? new Date(dateMs).toLocaleDateString(undefined, {month:"short", day:"numeric", year:"numeric"}) : "Unknown date";
@@ -1759,7 +1824,12 @@ function renderPersonalHistory(){
     if(round.dnf){
       resultLabel = "Ended early";
     } else if(round.scoring_mode === "points"){
-      resultLabel = `${myEntry?.points || 0} pts`;
+      // A points-mode round can also get a winner_id (first to finish) — show both when it
+      // happened, not just the points, but never invent a winner it never actually got.
+      const pointsLabel = `${myEntry?.points || 0} pts`;
+      resultLabel = round.winner_id
+        ? `${pointsLabel} · ${(myEntry && round.winner_id === myEntry.player_id) ? "You won" : "You lost"}`
+        : pointsLabel;
     } else if(!round.winner_id){
       resultLabel = "No winner";
     } else {
@@ -1769,6 +1839,29 @@ function renderPersonalHistory(){
       `<div class="rows">${matchSpans.join("")}<span>${escapeHtml(resultLabel)}</span></div>`;
     list.appendChild(item);
   });
+}
+function renderHistoryStats(stats){
+  const box = document.getElementById("historyStats");
+  const total = stats.wins + stats.losses;
+  const record = `${stats.wins}W – ${stats.losses}L` + (total > 0 ? ` (${stats.winPct}%)` : "");
+  box.innerHTML = `<div class="stat-chip">Record: <b>${escapeHtml(record)}</b></div>` +
+    `<div class="stat-chip">MVP in <b>${stats.mvp}</b> round${stats.mvp === 1 ? "" : "s"}</div>`;
+}
+function renderHistoryFilterOptions(){
+  const {rooms, opponents} = buildHistoryFilterOptions();
+  const roomSelect = document.getElementById("historyRoomFilter");
+  roomSelect.innerHTML = '<option value="">All Rooms</option>' + rooms.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
+  roomSelect.value = historyFilters.room;
+  const oppSelect = document.getElementById("historyOpponentFilter");
+  oppSelect.innerHTML = '<option value="">All Opponents</option>' + opponents.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.name)}</option>`).join("");
+  oppSelect.value = historyFilters.opponent;
+}
+// The single re-render entry point once filters change (item 5) — both the stats (item 4) and the
+// list itself narrow to the same filtered set, combined with AND.
+function renderPersonalHistoryModal(){
+  const filtered = filteredPersonalHistory();
+  renderHistoryStats(computeHistoryStats(filtered));
+  renderPersonalHistory(filtered);
 }
 
 function renderContextBar(){
@@ -2741,16 +2834,27 @@ document.getElementById("logoutBtn").addEventListener("click", signOutAndReload)
 document.getElementById("historyBtn").addEventListener("click", async () => {
   document.getElementById("historyModal").classList.add("show");
   document.getElementById("personalHistoryList").innerHTML = '<div class="empty" style="padding:12px;">Loading…</div>';
+  document.getElementById("historyStats").innerHTML = "";
+  historyFilters = {room:"", opponent:""};
   try{
     personalHistory = await loadPersonalHistory();
   }catch(e){
     console.error("personal history load failed", e);
     personalHistory = [];
   }
-  renderPersonalHistory();
+  renderHistoryFilterOptions();
+  renderPersonalHistoryModal();
 });
 document.getElementById("closeHistoryBtn").addEventListener("click", () => {
   document.getElementById("historyModal").classList.remove("show");
+});
+document.getElementById("historyRoomFilter").addEventListener("change", e => {
+  historyFilters.room = e.target.value;
+  renderPersonalHistoryModal();
+});
+document.getElementById("historyOpponentFilter").addEventListener("change", e => {
+  historyFilters.opponent = e.target.value;
+  renderPersonalHistoryModal();
 });
 
 /* ============================ settings ============================ */
@@ -2844,6 +2948,7 @@ document.getElementById("upgradeAccountBtn").addEventListener("click", async () 
   const confirm = document.getElementById("upgradeConfirmPassword").value;
   if(!/^[a-z0-9_]{3,20}$/.test(username)){ showSettingsError("settingsUpgradeErr", "Username: 3-20 letters, numbers, or underscores."); return; }
   if(!password){ showSettingsError("settingsUpgradeErr", "Enter a password."); return; }
+  if(password.length < 6){ showSettingsError("settingsUpgradeErr", "Password must be at least 6 characters."); return; }
   if(password !== confirm){ showSettingsError("settingsUpgradeErr", "Passwords don't match."); return; }
   const btn = document.getElementById("upgradeAccountBtn");
   btn.disabled = true;
