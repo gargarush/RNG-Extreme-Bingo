@@ -275,6 +275,13 @@
   .tile.masked{border-style:dashed;cursor:default;background:#1a1526;}
   .tile.masked svg{width:calc(var(--tile-icon) * .8);height:calc(var(--tile-icon) * .8);}
 
+  /* Tic Tac Toe squares: --side-color/--side-soft are set inline per-square from TEAM_ACCENTS,
+     same rgba-alpha-glow technique .tile.done already uses with --mark/--mark-soft, just keyed to
+     whichever side claimed the square instead of the current viewer's own accent. */
+  .tile.ttt-square.claimed{background:#241531;border-color:var(--side-color);box-shadow:0 0 0 1px var(--side-soft),0 0 20px var(--side-soft);}
+  .tile.ttt-square.claimed .name{color:var(--ink);}
+  .tile.ttt-square .side-badge{position:absolute;top:6px;right:6px;font-size:11px;font-weight:800;padding:1px 6px;border-radius:5px;background:var(--panel);color:var(--side-color);border:1px solid var(--side-color);pointer-events:none;z-index:1;}
+
   .empty{text-align:center;color:var(--dim);padding:50px 20px;font-size:14.5px;border:1px dashed var(--panel-line);border-radius:12px;}
 
   .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(12,7,20,.9);z-index:30;padding:20px;}
@@ -459,6 +466,7 @@
 
   <div class="grid-bingo-controls" id="gridBingoControls">
     <button id="startGridBingoBtn" class="primary" type="button">Start Game</button>
+    <button id="startTicTacToeBtn" class="primary" type="button">Start Tic Tac Toe</button>
     <button id="newGridBingoBtn" class="primary" type="button">New Round</button>
     <button id="endGridBingoBtn" type="button">End Round</button>
     <button id="backToRoomBtn" type="button">Back to Room</button>
@@ -480,6 +488,20 @@
     <div class="bingo-config-row" id="underdogBonusRow"><label>Underdog bonus</label><div class="bingo-options" id="underdogBonusOptions"></div></div>
     <div class="bingo-config-actions"><button id="cancelGridBingoBtn" type="button">Cancel</button><button id="confirmGridBingoBtn" class="primary" type="button">Start Round</button></div>
     <div class="hint-text" id="startRoundHint">Need at least 2 people in this room to start a round.</div>
+  </div>
+  <div class="grid-bingo-config" id="ticTacToeConfig">
+    <div class="bingo-config-row"><label>Grid size</label><div class="bingo-options" id="tttGridSizeOptions"></div></div>
+    <div class="bingo-config-row" id="tttTeamFormationRow"><label>Teams</label><div class="bingo-options" id="tttTeamFormationOptions"></div></div>
+    <div class="team-assign" id="tttTeamAssignBox"></div>
+    <div class="bingo-config-row">
+      <label>Take-backs</label>
+      <label class="toggle-row">
+        <span class="toggle-switch"><input type="checkbox" id="tttTakeBacksCheckbox"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+        <span>Claiming an opponent's square steals it</span>
+      </label>
+    </div>
+    <div class="bingo-config-actions"><button id="cancelTicTacToeBtn" type="button">Cancel</button><button id="confirmTicTacToeBtn" class="primary" type="button">Start Round</button></div>
+    <div class="hint-text" id="tttStartRoundHint">Need at least 2 people in this room to start a round.</div>
   </div>
   <div class="grid-bingo-status" id="gridBingoStatus"></div>
   <div class="bingo-leaderboard" id="bingoLeaderboard"></div>
@@ -593,7 +615,7 @@
 
 <div class="modal" id="finishConfirmModal">
   <div class="modal-card">
-    <h3>Finish your card?</h3>
+    <h3 id="finishConfirmTitle">Finish your card?</h3>
     <p id="finishConfirmText"></p>
     <div class="btn-row">
       <button id="finishConfirmNo" class="ghost" type="button">Cancel</button>
@@ -925,6 +947,18 @@ const Store = {
     if(!res.ok) throw new Error("winner claim failed " + res.status);
     return (await res.json()).length > 0;
   },
+  // Tic Tac Toe square claim: the claim_square() Postgres function is the single source of truth
+  // for the concurrency rule now (take-backs-off "only if unclaimed" vs take-backs-on unconditional
+  // overwrite) — no client-side read-merge-then-PATCH of rounds.claims anymore, so there's nothing
+  // here for a stale in-memory snapshot to clobber. Returns the resulting claims object; the caller
+  // is responsible for checking whether its own claim actually landed in it.
+  async claimSquare(roundId, weapon, side, playerId, takeBacks){
+    const {data, error} = await sbClient.rpc("claim_square", {
+      p_round_id: roundId, p_weapon: weapon, p_side: side, p_player_id: playerId, p_take_backs: takeBacks
+    });
+    if(error) throw new Error("square claim failed: " + error.message);
+    return data;
+  },
   async listEndedRounds(roomCode){
     if(!roomCode) return [];
     if(useRemote()){
@@ -1010,6 +1044,15 @@ const ACCENTS = [
   {id:"orange", hex:"#ff8a3d",soft:"rgba(255,138,61,.25)"},
   {id:"violet", hex:"#9b6dff",soft:"rgba(155,109,255,.25)"}
 ];
+// Tic Tac Toe (design call, flagged in the PR summary): team-A/team-B on the shared claim board
+// get two FIXED accents from this same palette, not the current viewer's own chosen --mark accent
+// — that accent is a per-player customization already used everywhere for buttons/highlights, and
+// reusing it for a claimed square would make it look identical to unrelated "this is my accent" UI
+// whenever the viewer's own pick happens to match a side's color.
+const TEAM_ACCENTS = {
+  "team-A": ACCENTS.find(a => a.id === "violet"),
+  "team-B": ACCENTS.find(a => a.id === "orange")
+};
 const TILE_SIZES = [
   {id:"small",label:"Small",min:"95px",icon:"25px",name:"9.5px"},
   {id:"medium",label:"Medium",min:"112px",icon:"30px",name:"10.5px"},
@@ -1041,6 +1084,7 @@ let lastRoundId = null;
 let roundEntries = [];
 let roundViewingId = null;
 let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisibility:"hidden",teamFormation:"random",manualTeams:{},teamSharedEdit:false,underdogBonus:"none"};
+let tttConfig = {gridSize:3,teamFormation:"random",manualTeams:{},takeBacks:false};
 let rosterBaseline = null;
 let roomIsPublic = false;
 let publicRoomsList = [];
@@ -1098,6 +1142,9 @@ function roundSizeLabel(round){
   return round.layout === "all" ? "All" : `${round.grid_size}x${round.grid_size}`;
 }
 function roundModeLabel(round, short){
+  // Used verbatim in the "X started a 3x3 Tic Tac Toe round" / context-bar toasts (item 3) — no
+  // short/long distinction needed, it already reads naturally either way.
+  if(round.game_type === "tictactoe") return "Tic Tac Toe";
   const isShared = round.card_mode === "shared";
   // Team rounds can now differ in card mode just like solo ones (item 3), so this can no longer
   // say a flat "Team card" regardless — that would misreport a "different card per team" round.
@@ -1305,6 +1352,19 @@ function computeRoundPoints(round, entryPlayerId, tiles, lines, full){
 // display name (item 4) — lets a caller compare directly against me.id without risking a false
 // match between two players who happen to share a display name.
 function computeTeamMVPId(entry, round){
+  // Tic Tac Toe has no marked_by/lines-per-entry concept (item 4, design call flagged in the PR
+  // summary) — MVP here is simply whichever real teammate claimed the most squares for this side,
+  // read straight from round.claims instead of the Grid-Bingo-specific fields below.
+  if(round.game_type === "tictactoe"){
+    const counts = new Map();
+    Object.values(round.claims || {}).forEach(c => {
+      if(!c || c.side !== entry.player_id || !c.playerId) return;
+      counts.set(c.playerId, (counts.get(c.playerId) || 0) + 1);
+    });
+    let best = null;
+    counts.forEach((count, pid) => { if(!best || count > best.count) best = {pid, count}; });
+    return best ? best.pid : null;
+  }
   const markedBy = entry.marked_by || {};
   const tileCounts = new Map();
   Object.values(markedBy).forEach(m => {
@@ -1930,11 +1990,16 @@ function renderGridBingoControls(){
   const ended = hasRound && Boolean(activeRound.ended_at);
   document.getElementById("gridBingoControls").classList.toggle("show", inRoom);
   document.getElementById("startGridBingoBtn").style.display = hasRound ? "none" : "";
+  document.getElementById("startTicTacToeBtn").style.display = hasRound ? "none" : "";
   document.getElementById("newGridBingoBtn").style.display = inRoom && hasRound ? "" : "none";
   document.getElementById("endGridBingoBtn").style.display = inRoom && hasRound && !ended ? "" : "none";
   document.getElementById("backToRoomBtn").style.display = inRoom && ended ? "" : "none";
   document.getElementById("gridBingoConfig").classList.toggle("show", inRoom && !hasRound && document.getElementById("gridBingoConfig").dataset.open === "true");
-  if(!inRoom || hasRound) document.getElementById("gridBingoConfig").dataset.open = "false";
+  document.getElementById("ticTacToeConfig").classList.toggle("show", inRoom && !hasRound && document.getElementById("ticTacToeConfig").dataset.open === "true");
+  if(!inRoom || hasRound){
+    document.getElementById("gridBingoConfig").dataset.open = "false";
+    document.getElementById("ticTacToeConfig").dataset.open = "false";
+  }
 }
 
 function buildBingoOptions(id, options, selected, onChange){
@@ -1955,8 +2020,11 @@ function buildBingoOptions(id, options, selected, onChange){
 const TEAM_SIZE_THRESHOLD = 2;
 function isTeamRoomSize(members){ return members.length > TEAM_SIZE_THRESHOLD; }
 
-function buildTeamAssignRows(members){
-  const box = document.getElementById("teamAssignBox");
+// Generalized over a `config` object (Tic Tac Toe: item shared UI) — Grid Bingo passes
+// gridBingoConfig, Tic Tac Toe passes its own tttConfig, so choosing a manual team for one game
+// never touches the other's in-progress config. `onChange` re-runs that game's own build function.
+function buildTeamAssignRows(members, config, boxId, onChange){
+  const box = document.getElementById(boxId);
   box.innerHTML = "";
   members.forEach(([id, board]) => {
     const pid = id;
@@ -1971,12 +2039,12 @@ function buildTeamAssignRows(members){
       const btn = document.createElement("button");
       btn.type = "button";
       btn.textContent = label;
-      const selected = gridBingoConfig.manualTeams[pid] === value;
+      const selected = config.manualTeams[pid] === value;
       btn.className = selected ? "on" : "";
       // Soft glow in this player's own accent, not a bright solid ring — accent.soft is already
       // a ~25% alpha rgba() of their color, so it reads as a gentle highlight, not a neon border.
       if(selected) btn.style.boxShadow = `0 0 10px 3px ${accent.soft}`;
-      btn.addEventListener("click", () => { gridBingoConfig.manualTeams[pid] = value; buildGridBingoConfig(); });
+      btn.addEventListener("click", () => { config.manualTeams[pid] = value; onChange(); });
       opts.appendChild(btn);
     });
     row.innerHTML = `<span class="nm">${escapeHtml(board.name)}${pid === me.id ? '<span class="you-inline">(YOU)</span>' : ""}</span>`;
@@ -1987,12 +2055,12 @@ function buildTeamAssignRows(members){
 
 // Manual formation can't start until every present member has a team and both teams have at
 // least 1 player (item 1); random formation is always valid since it assigns everyone itself.
-function teamConfigValid(members){
+function teamConfigValid(members, config){
   if(!isTeamRoomSize(members)) return true;
-  if(gridBingoConfig.teamFormation !== "manual") return true;
+  if(config.teamFormation !== "manual") return true;
   const pids = members.map(([id]) => id);
-  if(!pids.every(pid => gridBingoConfig.manualTeams[pid])) return false;
-  const teamACount = pids.filter(pid => gridBingoConfig.manualTeams[pid] === "team-A").length;
+  if(!pids.every(pid => config.manualTeams[pid])) return false;
+  const teamACount = pids.filter(pid => config.manualTeams[pid] === "team-A").length;
   return teamACount >= 1 && teamACount < pids.length;
 }
 
@@ -2020,7 +2088,7 @@ function buildGridBingoConfig(){
   if(isTeamMode){
     buildBingoOptions("teamFormationOptions", [{label:"Random",value:"random"},{label:"Manual",value:"manual"}], gridBingoConfig.teamFormation, value => { gridBingoConfig.teamFormation = value; buildGridBingoConfig(); });
     document.getElementById("teamSharedEditCheckbox").checked = Boolean(gridBingoConfig.teamSharedEdit);
-    if(gridBingoConfig.teamFormation === "manual") buildTeamAssignRows(members);
+    if(gridBingoConfig.teamFormation === "manual") buildTeamAssignRows(members, gridBingoConfig, "teamAssignBox", buildGridBingoConfig);
   }
   buildBingoOptions("scoringModeOptions", [{label:"Race only (first full clear wins)",value:"race"},{label:"Points (lines + bonuses)",value:"points"}], gridBingoConfig.scoringMode, value => { gridBingoConfig.scoringMode = value; buildGridBingoConfig(); });
   // Underdog bonus (item 2): team mode + points scoring only — it's inert on race mode or equal
@@ -2038,8 +2106,73 @@ function buildGridBingoConfig(){
   const notEnoughPeople = members.length < 2;
   const confirmBtn = document.getElementById("confirmGridBingoBtn");
   confirmBtn.classList.toggle("greyed", notEnoughPeople);
-  confirmBtn.disabled = !notEnoughPeople && !teamConfigValid(members);
+  confirmBtn.disabled = !notEnoughPeople && !teamConfigValid(members, gridBingoConfig);
   document.getElementById("startRoundHint").classList.toggle("show", notEnoughPeople);
+}
+
+// Own minimal config panel (item: UI 1) — no card mode, no visibility, no scoring mode: a Tic Tac
+// Toe round has none of those concepts, just a grid size, team formation (>2-person rooms only,
+// reusing the exact same generalized buildTeams()/teamConfigValid()/buildTeamAssignRows() Grid
+// Bingo uses, just with tttConfig instead of gridBingoConfig), and a take-backs toggle.
+function buildTicTacToeConfig(){
+  const members = Object.entries(boards);
+  const isTeamMode = isTeamRoomSize(members);
+  buildBingoOptions("tttGridSizeOptions", [{label:"3x3",value:3},{label:"4x4",value:4},{label:"5x5",value:5}], tttConfig.gridSize, value => { tttConfig.gridSize = value; buildTicTacToeConfig(); });
+  document.getElementById("tttTeamFormationRow").style.display = isTeamMode ? "" : "none";
+  document.getElementById("tttTeamAssignBox").classList.toggle("show", isTeamMode && tttConfig.teamFormation === "manual");
+  if(isTeamMode){
+    buildBingoOptions("tttTeamFormationOptions", [{label:"Random",value:"random"},{label:"Manual",value:"manual"}], tttConfig.teamFormation, value => { tttConfig.teamFormation = value; buildTicTacToeConfig(); });
+    if(tttConfig.teamFormation === "manual") buildTeamAssignRows(members, tttConfig, "tttTeamAssignBox", buildTicTacToeConfig);
+  }
+  document.getElementById("tttTakeBacksCheckbox").checked = Boolean(tttConfig.takeBacks);
+  const notEnoughPeople = members.length < 2;
+  const confirmBtn = document.getElementById("confirmTicTacToeBtn");
+  confirmBtn.classList.toggle("greyed", notEnoughPeople);
+  confirmBtn.disabled = !notEnoughPeople && !teamConfigValid(members, tttConfig);
+  document.getElementById("tttStartRoundHint").classList.toggle("show", notEnoughPeople);
+}
+
+// Exactly 2 sides always (concept): a straight 2-person room skips team formation entirely and
+// just makes each player their own side, rather than routing through buildTeams()'s random/manual
+// logic for a "team" of 1 — there's nothing to configure when there's only one possible split.
+async function startTicTacToe(){
+  const roundId = crypto.randomUUID ? crypto.randomUUID() : "round-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
+  const members = Object.entries(boards);
+  const size = Number(tttConfig.gridSize);
+  const sharedCard = makeRoundCard(size); // no repeats, full weapon pool — same mechanism as Grid Bingo
+  const teams = isTeamRoomSize(members)
+    ? buildTeams(members, tttConfig)
+    : {"team-A":[members[0][0]], "team-B":[members[1][0]]};
+  const round = {
+    id:roundId,
+    room_code:currentRoomCode(),
+    created_at:Date.now(),
+    game_type:"tictactoe",
+    grid_size:size,
+    layout:"square",
+    card_mode:"shared",
+    scoring_mode:"race",
+    card_visibility:"visible",
+    shared_card:sharedCard,
+    claims:{},
+    take_backs:Boolean(tttConfig.takeBacks),
+    winner_id:null,
+    ended_at:null,
+    started_by:me.name,
+    ended_by:null,
+    teams
+  };
+  // Still create the usual 2 round_entries rows (data model note) so all existing infrastructure
+  // keeps working unchanged: room leaderboard aggregation, personal history, the "(YOU)"/MVP
+  // mechanisms, left-player handling. marks/marked_by are unused for gameplay here — the board
+  // always reads/writes rounds.claims directly, never these — kept only for shape compatibility.
+  const entries = Object.keys(teams).map(teamKey => ({
+    round_id:roundId, player_id:teamKey, player_name:teamKey === "team-A" ? "Team A" : "Team B",
+    card:sharedCard, marks:{}, marked_by:{}, blocked_attempts:{}, lines_completed:0, points:0, finished_at:null, version:0
+  }));
+  await Store.createRound(round, entries);
+  await syncNow();
+  renderAll();
 }
 
 function makeRoundEntry(playerId, playerName, card, roundId){
@@ -2048,12 +2181,12 @@ function makeRoundEntry(playerId, playerName, card, roundId){
 
 // Random split: shuffle everyone present, then divide as evenly as possible (item 1). Manual
 // split: read gridBingoConfig.manualTeams, filtered to members actually present right now.
-function buildTeams(members){
+function buildTeams(members, config){
   const pids = members.map(([id]) => id);
-  if(gridBingoConfig.teamFormation === "manual"){
+  if(config.teamFormation === "manual"){
     return {
-      "team-A": pids.filter(pid => gridBingoConfig.manualTeams[pid] === "team-A"),
-      "team-B": pids.filter(pid => gridBingoConfig.manualTeams[pid] === "team-B")
+      "team-A": pids.filter(pid => config.manualTeams[pid] === "team-A"),
+      "team-B": pids.filter(pid => config.manualTeams[pid] === "team-B")
     };
   }
   const shuffled = shuffle(pids);
@@ -2066,7 +2199,7 @@ function buildTeams(members){
 // reads roundEntries keeps working unchanged, since it just sees two entrants, same shape as a
 // <=2-player solo round.
 async function startTeamGridBingo(roundId, members){
-  const teams = buildTeams(members);
+  const teams = buildTeams(members, gridBingoConfig);
   const isAll = gridBingoConfig.gridSize === "all";
   // Card mode comes from the same config the solo path uses — "All" still forces "shared"
   // regardless of whatever was left over from a previous square-round configuration, since there's
@@ -2258,8 +2391,13 @@ function wouldCompleteEntry(entry, name){
 }
 
 let pendingFinishAction = null;
-function showFinishConfirm(message, onConfirm){
+// title/confirmLabel (Tic Tac Toe reuse) default to Grid Bingo's original wording, so its own two
+// call sites below are unaffected — only attemptClaimSquare's "would win the round" case passes
+// its own, since "Finish your card?"/"Mark and finish" wouldn't make sense for a claimed square.
+function showFinishConfirm(message, onConfirm, title, confirmLabel){
+  document.getElementById("finishConfirmTitle").textContent = title || "Finish your card?";
   document.getElementById("finishConfirmText").textContent = message;
+  document.getElementById("finishConfirmYes").textContent = confirmLabel || "Mark and finish";
   pendingFinishAction = onConfirm;
   document.getElementById("finishConfirmModal").classList.add("show");
 }
@@ -2290,6 +2428,100 @@ function attemptToggleRoundCard(name){
   }
 }
 
+/* ============================ tic tac toe ============================ */
+// The whole grid's win check, driven entirely by rounds.claims (the single source of truth for
+// the shared board) rather than any per-entry marks. Returns the winning side, or null.
+function ticTacToeWinningSide(card, claims, size){
+  claims = claims || {};
+  const sideAt = i => { const c = claims[card[i]]; return c ? c.side : null; };
+  const lines = [];
+  for(let row = 0; row < size; row++) lines.push(Array.from({length:size}, (_, col) => row * size + col));
+  for(let col = 0; col < size; col++) lines.push(Array.from({length:size}, (_, row) => row * size + col));
+  lines.push(Array.from({length:size}, (_, i) => i * size + i));
+  lines.push(Array.from({length:size}, (_, i) => i * size + (size - i - 1)));
+  for(const line of lines){
+    const first = sideAt(line[0]);
+    if(first && line.every(idx => sideAt(idx) === first)) return first;
+  }
+  return null;
+}
+// Off: once claimed by EITHER side, permanently locked — the same "no one, not even whoever
+// claimed it, can ever undo it" concept as Grid Bingo's handicap-tile locking (canEditTile), just
+// applied to every claim instead of only handicap freebies. On: your own side's claim still can't
+// be reclaimed (nothing to do), but the opposing side's claim can be stolen.
+function canClaimSquare(name){
+  if(!activeRound || activeRound.ended_at) return false;
+  const mySide = myTeamId();
+  if(!mySide) return false;
+  const claim = (activeRound.claims || {})[name];
+  if(!claim) return true;
+  if(claim.side === mySide) return false;
+  return Boolean(activeRound.take_backs);
+}
+function wouldWinTicTacToe(name){
+  const mySide = myTeamId();
+  const claims = {...(activeRound.claims || {}), [name]:{side:mySide}};
+  return ticTacToeWinningSide(activeRound.shared_card, claims, Number(activeRound.grid_size)) === mySide;
+}
+// Single choke point for every square tap, mirroring attemptToggleRoundCard's shape exactly: a
+// permission check with an explanatory toast when blocked, then a confirmation step when the tap
+// would end the round (item: UI 2) — reusing the same showFinishConfirm modal Grid Bingo uses for
+// "this mark would finish your card", since "this claim would win the round" is the same kind of
+// can't-undo-it moment.
+function attemptClaimSquare(name){
+  if(!activeRound || activeRound.ended_at) return;
+  if(!canClaimSquare(name)){
+    const claim = (activeRound.claims || {})[name];
+    if(claim && claim.side !== myTeamId()){
+      showToast(`This square already belongs to ${claim.side === "team-A" ? "Team A" : "Team B"} — take-backs are off`);
+    }
+    return;
+  }
+  if(wouldWinTicTacToe(name)){
+    showFinishConfirm(`Claim ${name} and win the round for your team? This can't be undone.`, () => claimSquare(name), "Win the round?", "Claim and win");
+  } else {
+    claimSquare(name);
+  }
+}
+async function claimSquare(name){
+  const mySide = myTeamId();
+  if(!mySide) return;
+  let claims;
+  try{
+    claims = await Store.claimSquare(activeRound.id, name, mySide, me.id, Boolean(activeRound.take_backs));
+  }catch(e){
+    console.error("square claim failed", e);
+    showToast("Couldn't claim that square — try again.");
+    return;
+  }
+  // Don't assume success just because the RPC call itself didn't error — claim_square() enforces
+  // the take-backs-off "only if unclaimed" rule server-side, so someone else's earlier claim on
+  // this exact square silently wins there instead of raising an error. Confirming our own claim
+  // actually landed (right side AND right playerId) is the only reliable success signal.
+  const landed = claims && claims[name];
+  if(!landed || landed.side !== mySide || landed.playerId !== me.id){
+    showToast("Someone already claimed that square.");
+    await syncNow();
+    renderAll();
+    return;
+  }
+  activeRound = {...activeRound, claims};
+  const size = Number(activeRound.grid_size);
+  const winningSide = ticTacToeWinningSide(activeRound.shared_card, claims, size);
+  if(winningSide){
+    // Same instant-end behavior Grid Bingo's race mode already has for <=2 entries — a TTT round
+    // always has exactly 2 entries (one per side), so this is always the right path, never the
+    // >2-player claimWinner-without-ending one.
+    try{ await Store.claimRound(activeRound.id, winningSide, me.name); }catch(e){ console.error(e); }
+  } else if(Object.keys(claims).length >= size * size){
+    // Full grid, no line — draw. Reuses the existing "No winner" ended-round path as-is: ended_at
+    // set, winner_id stays null, dnf stays false.
+    try{ await Store.endRound(activeRound.id, me.name); }catch(e){ console.error("round auto-end failed", e); }
+  }
+  await syncNow();
+  renderAll();
+}
+
 // "All" mode only: mark every unmarked weapon in one category through the exact same
 // toggleRoundCard() path a normal tap uses (recomputes tiles/points, saves, for every weapon it
 // touches) — so it can never drift from single-tap scoring or skip the lock-on-finish check. This
@@ -2317,6 +2549,11 @@ async function markCategoryDone(category){
 
 const VISIBILITY_LABELS = {hidden:"Hidden", visible:"Fully visible", finish:"Reveal as they mark"};
 function roundSettingsLine(round){
+  // Tic Tac Toe (item 3): no card_mode/visibility/scoring concept at all — a completely different
+  // settings line, not the Grid Bingo one below with an extra branch bolted on.
+  if(round.game_type === "tictactoe"){
+    return [roundSizeLabel(round), "Tic Tac Toe", round.take_backs ? "Take-backs on" : "Take-backs off"].filter(Boolean).join(" · ");
+  }
   // Universal visibility (item 1): shown regardless of card_mode now, not just "individual" —
   // shared-card rounds have a real, meaningful visibility setting too.
   const visibilityLabel = VISIBILITY_LABELS[round.card_visibility || "hidden"];
@@ -2455,6 +2692,70 @@ function renderRoundBoard(){
   }
 }
 
+// Tic Tac Toe's renderRoundBoard() equivalent — genuinely different shape, not a variant: one
+// shared board for everyone (no per-player "viewing someone else's card" concept, no masking/
+// visibility), so there's no viewingBanner/roundViewingId handling here at all.
+function renderTicTacToeRound(){
+  const size = Number(activeRound.grid_size);
+  const mySide = myTeamId();
+  document.getElementById("viewingBanner").classList.remove("show");
+  document.getElementById("resetBtn").style.display = "none";
+  document.getElementById("progressTrack").style.display = "none";
+
+  const claims = activeRound.claims || {};
+  const claimedCount = Object.keys(claims).length;
+  if(activeRound.ended_at){
+    document.getElementById("scoreNum").textContent = "—";
+    document.getElementById("scoreLbl").textContent = "Idle";
+  } else {
+    document.getElementById("scoreNum").textContent = `${claimedCount} / ${size * size}`;
+    document.getElementById("scoreLbl").textContent = "squares claimed";
+  }
+
+  const leaderboard = document.getElementById("bingoLeaderboard");
+  leaderboard.innerHTML = "";
+  ["team-A", "team-B"].forEach(teamKey => {
+    const entry = roundEntries.find(e => e.player_id === teamKey);
+    if(!entry) return;
+    const squaresClaimed = Object.values(claims).filter(c => c && c.side === teamKey).length;
+    const members = activeRound.teams && activeRound.teams[teamKey];
+    const membersLine = members ? `<div class="team-members">${members.map(pid => escapeHtml(teamMemberName(pid))).join(", ")}</div>` : "";
+    // Live MVP (most squares claimed by a single teammate), always shown just like Grid Bingo's —
+    // computeTeamMVP() already degrades to null with nothing claimed yet, safe unconditionally.
+    const mvpName = members ? computeTeamMVP(entry, activeRound) : null;
+    const mvpLine = mvpName ? `<div class="team-mvp">MVP: ${escapeHtml(mvpName)}</div>` : "";
+    const card = document.createElement("div");
+    card.className = "player" + (activeRound.winner_id === teamKey ? " winner" : "") + (mySide === teamKey ? " viewing" : "");
+    card.innerHTML = `<div class="top"><span class="nm">${escapeHtml(entry.player_name)}</span><span class="ct">${activeRound.winner_id === teamKey ? "★" : ""}</span></div>${membersLine}<div class="bingo-score">${squaresClaimed} squares</div>${mvpLine}`;
+    leaderboard.appendChild(card);
+  });
+  leaderboard.classList.add("show");
+
+  const status = document.getElementById("gridBingoStatus");
+  status.classList.add("show");
+  const settingsLine = roundSettingsLine(activeRound);
+  let resultLine;
+  if(activeRound.winner_id){
+    const winnerEntry = roundEntries.find(e => e.player_id === activeRound.winner_id);
+    resultLine = activeRound.winner_id === mySide ? "<strong>Your team won!</strong>" : `<strong>${escapeHtml(winnerEntry?.player_name || "A team")} won this round</strong>`;
+  } else if(activeRound.ended_at){
+    resultLine = activeRound.dnf ? "<strong>Round ended</strong>" : "<strong>Round ended in a draw</strong>";
+  } else {
+    resultLine = "Round in progress";
+  }
+  status.innerHTML = `<div class="settings-line">${escapeHtml(settingsLine)}</div><div>${resultLine}</div>`;
+
+  const grid = document.createElement("div");
+  grid.className = "grid bingo-grid";
+  grid.style.setProperty("--bingo-size", size);
+  (activeRound.shared_card || []).forEach(name => {
+    const claim = claims[name] || null;
+    const editable = Boolean(mySide) && !activeRound.ended_at && canClaimSquare(name);
+    grid.appendChild(makeClaimSquare(name, claim, editable, attemptClaimSquare));
+  });
+  document.getElementById("board").replaceChildren(grid);
+}
+
 function roomCodeFromUrl(){
   return new URLSearchParams(location.search).get("room")?.trim().toUpperCase() || "";
 }
@@ -2544,13 +2845,41 @@ function makeTile(item, board, editable, onToggle, masked){
   return tile;
 }
 
+// Tic Tac Toe's square equivalent of makeTile() — unclaimed stays neutral, claimed gets colored
+// per-side via TEAM_ACCENTS (item: UI 2) plus a small "A"/"B" badge so the two sides read clearly
+// distinct at a glance, not just by color alone.
+function makeClaimSquare(name, claim, editable, onClaim){
+  const square = document.createElement("button");
+  square.type = "button";
+  square.disabled = !editable;
+  const side = claim && claim.side;
+  square.className = "tile ttt-square" + (side ? " claimed" : "");
+  square.setAttribute("aria-pressed", side ? "true" : "false");
+  if(side){
+    const accent = TEAM_ACCENTS[side];
+    square.style.setProperty("--side-color", accent.hex);
+    square.style.setProperty("--side-soft", accent.soft);
+  }
+  square.innerHTML = `<img class="weapon-image" src="weapons/${slug(name)}.png" alt="" draggable="false">` +
+    `<span class="name">${escapeHtml(name)}</span>` +
+    (side ? `<span class="side-badge">${side === "team-A" ? "A" : "B"}</span>` : "");
+  const image = square.querySelector(".weapon-image");
+  image.onerror = function(){
+    this.insertAdjacentHTML("afterend", BLANK);
+    this.remove();
+  };
+  if(editable) square.addEventListener("click", () => onClaim(name));
+  return square;
+}
+
 // No Free Play (item 8) — either a round is live (renderRoundBoard), or this player is idle in a
 // room (or not in one yet), in which case there's nothing to track: no default 43-weapon tracker,
 // no per-player board to click into.
 function renderBoard(){
   document.getElementById("progressTrack").style.display = "";
   if(activeRound){
-    renderRoundBoard();
+    if(activeRound.game_type === "tictactoe") renderTicTacToeRound();
+    else renderRoundBoard();
     return;
   }
   document.getElementById("bingoLeaderboard").classList.remove("show");
@@ -2638,15 +2967,24 @@ document.getElementById("startGridBingoBtn").addEventListener("click", () => {
   buildGridBingoConfig();
   renderGridBingoControls();
 });
+document.getElementById("startTicTacToeBtn").addEventListener("click", () => {
+  document.getElementById("ticTacToeConfig").dataset.open = "true";
+  buildTicTacToeConfig();
+  renderGridBingoControls();
+});
 document.getElementById("newGridBingoBtn").addEventListener("click", async () => {
+  // Reopens whichever game's config panel the round that just ended actually was (item: UI) —
+  // not always Grid Bingo's, now that there are two.
+  const wasTicTacToe = activeRound?.game_type === "tictactoe";
   if(activeRound && !activeRound.ended_at){
     try{ await Store.endRound(activeRound.id, me.name); }catch(e){ console.error("round end failed", e); }
   }
   roundViewingId = null;
   lastRoundId = null;
   await syncNow();
-  document.getElementById("gridBingoConfig").dataset.open = "true";
-  buildGridBingoConfig();
+  const panelId = wasTicTacToe ? "ticTacToeConfig" : "gridBingoConfig";
+  document.getElementById(panelId).dataset.open = "true";
+  if(wasTicTacToe) buildTicTacToeConfig(); else buildGridBingoConfig();
   renderGridBingoControls();
 });
 document.getElementById("endGridBingoBtn").addEventListener("click", endGridBingo);
@@ -2671,6 +3009,21 @@ document.getElementById("confirmGridBingoBtn").addEventListener("click", async (
 });
 document.getElementById("teamSharedEditCheckbox").addEventListener("change", e => {
   gridBingoConfig.teamSharedEdit = e.target.checked;
+});
+document.getElementById("cancelTicTacToeBtn").addEventListener("click", () => {
+  document.getElementById("ticTacToeConfig").dataset.open = "false";
+  renderGridBingoControls();
+});
+document.getElementById("confirmTicTacToeBtn").addEventListener("click", async () => {
+  if(Object.entries(boards).length < 2){
+    showToast("Need at least 2 people in this room to start a round.");
+    return;
+  }
+  document.getElementById("ticTacToeConfig").dataset.open = "false";
+  await startTicTacToe();
+});
+document.getElementById("tttTakeBacksCheckbox").addEventListener("change", e => {
+  tttConfig.takeBacks = e.target.checked;
 });
 document.getElementById("muteBtn").addEventListener("click", async () => {
   me.muted = !me.muted;
