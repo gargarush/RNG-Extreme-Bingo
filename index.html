@@ -282,11 +282,12 @@
   .modal-card{background:var(--panel);border:1px solid var(--panel-line);border-radius:16px;padding:32px;max-width:400px;width:100%;}
   .modal-card.wide{max-width:560px;max-height:82vh;overflow-y:auto;}
   .modal-card.wide .round-history{margin-top:0;}
-  .history-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
+  .history-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;}
   .history-stats .stat-chip{background:#1a1526;border:1px solid var(--panel-line);border-radius:8px;padding:8px 12px;font-size:12.5px;color:var(--dim);}
   .history-stats .stat-chip b{color:var(--ink);}
-  .history-filters{display:flex;gap:10px;margin-bottom:14px;}
-  .history-filters select{flex:1;min-width:0;background:#14101f;border:1px solid var(--panel-line);color:var(--ink);padding:9px 10px;border-radius:8px;font-size:13px;font-family:inherit;}
+  .history-filters{display:flex;gap:10px;margin-bottom:10px;}
+  .history-filters .filter-field{flex:1;min-width:0;display:flex;flex-direction:column;}
+  .history-filters select{width:100%;background:#14101f;border:1px solid var(--panel-line);color:var(--ink);padding:9px 10px;border-radius:8px;font-size:13px;font-family:inherit;}
   .modal-card h3{margin:0 0 8px;font-size:22px;font-weight:800;}
   .modal-card p{margin:0 0 20px;color:var(--dim);font-size:14px;line-height:1.5;}
   .modal-card input{
@@ -310,6 +311,14 @@
   .danger-zone p{margin:0 0 12px;font-size:12.5px;}
   .danger-btn{width:100%;background:transparent;border:1px solid #ff4d5e;color:#ff4d5e;padding:10px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
   .danger-btn:hover{background:rgba(255,77,94,.15);}
+  /* Nested one level deeper than the modal's own top-level settings-label (item 1) — sits flush
+     right above its own select rather than picking up the generic 18px top margin. */
+  .history-filters .filter-field p.settings-label{margin:0 0 6px;}
+  .history-winbar{height:10px;border-radius:6px;overflow:hidden;background:#241a33;display:flex;margin-bottom:14px;}
+  .history-winbar .win-seg{background:var(--utility);height:100%;}
+  .history-winbar .loss-seg{background:var(--melee);height:100%;}
+  .history-mvp-toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim);margin-bottom:14px;cursor:pointer;}
+  .history-mvp-toggle input{width:auto;margin:0;}
   .room-actions .leave-room{background:transparent;border:1px solid var(--panel-line);color:var(--dim);padding:10px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;}
   .room-actions .leave-room:hover{border-color:var(--mark);color:var(--ink);}
   .modal-card .err{color:var(--melee);font-size:12.5px;margin:-6px 0 12px;display:none;}
@@ -540,10 +549,29 @@
     <h3>Your Round History</h3>
     <p>Every round you've played, across every room.</p>
     <div class="history-stats" id="historyStats"></div>
+    <div class="history-winbar" id="historyWinBar"></div>
     <div class="history-filters">
-      <select id="historyRoomFilter"></select>
-      <select id="historyOpponentFilter"></select>
+      <div class="filter-field">
+        <p class="settings-label">Room</p>
+        <select id="historyRoomFilter"></select>
+      </div>
+      <div class="filter-field">
+        <p class="settings-label">Opponent</p>
+        <select id="historyOpponentFilter"></select>
+      </div>
+      <div class="filter-field">
+        <p class="settings-label">Result</p>
+        <select id="historyResultFilter">
+          <option value="">All Results</option>
+          <option value="win">Wins Only</option>
+          <option value="loss">Losses Only</option>
+        </select>
+      </div>
     </div>
+    <label class="history-mvp-toggle">
+      <input type="checkbox" id="historyMvpFilter">
+      MVP rounds only
+    </label>
     <div class="round-history show" id="personalHistoryList"></div>
     <button id="closeHistoryBtn" class="auth-toggle-btn" type="button">Close</button>
   </div>
@@ -1018,7 +1046,7 @@ let roomIsPublic = false;
 let publicRoomsList = [];
 let personalHistory = [];
 let personalHistoryNames = {};
-let historyFilters = {room:"", opponent:""};
+let historyFilters = {room:"", opponent:"", result:"", mvpOnly:false};
 let roomLeaderboard = [];
 let roundHistory = [];
 // "<entryPlayerId>:<weaponName>" -> last-seen blocked_attempts timestamp (item 5), so a sync only
@@ -1122,19 +1150,28 @@ function roundMatchInfo(round, entries, myEntry){
   const opponents = entries.filter(e => e !== myEntry).map(e => ({id:e.player_id, name:e.player_name}));
   return {teammates:[], opponents};
 }
-// Win/loss (item 4): any round with winner_id set counts, points mode included now that a
-// points-mode round can also get a winner_id (first to finish). MVP: team rounds only, via
-// computeTeamMVPId() so it's compared by uid, never by a display name that two players might share.
+// Shared by computeHistoryStats() and the Result filter (item 2) — null means "no result yet"
+// (dnf, or winner_id never got set), which the Result filter excludes from both Wins and Losses.
+function roundResult(round, entries){
+  if(round.dnf || !round.winner_id) return null;
+  const myEntry = myEntryInRound(round, entries);
+  if(!myEntry) return null;
+  return round.winner_id === myEntry.player_id ? "win" : "loss";
+}
+// MVP (item 4/3): team rounds only, via computeTeamMVPId() so it's compared by uid, never by a
+// display name that two players might share.
+function isMvpRound(round, entries){
+  if(!round.teams) return false;
+  const myEntry = myEntryInRound(round, entries);
+  return Boolean(myEntry) && computeTeamMVPId(myEntry, round) === me.id;
+}
 function computeHistoryStats(items){
   let wins = 0, losses = 0, mvp = 0;
   items.forEach(({round, entries}) => {
-    if(round.dnf) return;
-    const myEntry = myEntryInRound(round, entries);
-    if(!myEntry) return;
-    if(round.winner_id){
-      if(round.winner_id === myEntry.player_id) wins++; else losses++;
-    }
-    if(round.teams && computeTeamMVPId(myEntry, round) === me.id) mvp++;
+    const result = roundResult(round, entries);
+    if(result === "win") wins++;
+    else if(result === "loss") losses++;
+    if(!round.dnf && isMvpRound(round, entries)) mvp++;
   });
   const total = wins + losses;
   return {wins, losses, winPct:total > 0 ? Math.round((wins / total) * 100) : null, mvp};
@@ -1147,6 +1184,8 @@ function filteredPersonalHistory(){
       const {opponents} = roundMatchInfo(round, entries, myEntry);
       if(!opponents.some(o => o.id === historyFilters.opponent)) return false;
     }
+    if(historyFilters.result && roundResult(round, entries) !== historyFilters.result) return false;
+    if(historyFilters.mvpOnly && !isMvpRound(round, entries)) return false;
     return true;
   });
 }
@@ -1846,6 +1885,12 @@ function renderHistoryStats(stats){
   const record = `${stats.wins}W – ${stats.losses}L` + (total > 0 ? ` (${stats.winPct}%)` : "");
   box.innerHTML = `<div class="stat-chip">Record: <b>${escapeHtml(record)}</b></div>` +
     `<div class="stat-chip">MVP in <b>${stats.mvp}</b> round${stats.mvp === 1 ? "" : "s"}</div>`;
+  // Empty/neutral bar when wins+losses is 0 (item 4) — no segments at all, just the container's
+  // own dim background, rather than dividing by zero.
+  const winBar = document.getElementById("historyWinBar");
+  winBar.innerHTML = total > 0
+    ? `<div class="win-seg" style="width:${(stats.wins / total) * 100}%"></div><div class="loss-seg" style="width:${(stats.losses / total) * 100}%"></div>`
+    : "";
 }
 function renderHistoryFilterOptions(){
   const {rooms, opponents} = buildHistoryFilterOptions();
@@ -1855,6 +1900,8 @@ function renderHistoryFilterOptions(){
   const oppSelect = document.getElementById("historyOpponentFilter");
   oppSelect.innerHTML = '<option value="">All Opponents</option>' + opponents.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.name)}</option>`).join("");
   oppSelect.value = historyFilters.opponent;
+  document.getElementById("historyResultFilter").value = historyFilters.result;
+  document.getElementById("historyMvpFilter").checked = historyFilters.mvpOnly;
 }
 // The single re-render entry point once filters change (item 5) — both the stats (item 4) and the
 // list itself narrow to the same filtered set, combined with AND.
@@ -2835,7 +2882,8 @@ document.getElementById("historyBtn").addEventListener("click", async () => {
   document.getElementById("historyModal").classList.add("show");
   document.getElementById("personalHistoryList").innerHTML = '<div class="empty" style="padding:12px;">Loading…</div>';
   document.getElementById("historyStats").innerHTML = "";
-  historyFilters = {room:"", opponent:""};
+  document.getElementById("historyWinBar").innerHTML = "";
+  historyFilters = {room:"", opponent:"", result:"", mvpOnly:false};
   try{
     personalHistory = await loadPersonalHistory();
   }catch(e){
@@ -2854,6 +2902,14 @@ document.getElementById("historyRoomFilter").addEventListener("change", e => {
 });
 document.getElementById("historyOpponentFilter").addEventListener("change", e => {
   historyFilters.opponent = e.target.value;
+  renderPersonalHistoryModal();
+});
+document.getElementById("historyResultFilter").addEventListener("change", e => {
+  historyFilters.result = e.target.value;
+  renderPersonalHistoryModal();
+});
+document.getElementById("historyMvpFilter").addEventListener("change", e => {
+  historyFilters.mvpOnly = e.target.checked;
   renderPersonalHistoryModal();
 });
 
