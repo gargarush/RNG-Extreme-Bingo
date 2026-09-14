@@ -154,13 +154,36 @@
      single-class+type button rule at equal specificity, and being declared later in the sheet, it
      was winning — which is exactly why these were rendering as three stacked full-width buttons
      per weapon instead of a compact row. */
-  .wdiff-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:3px 0;}
-  .wdiff-name{font-size:12.5px;color:var(--ink);}
-  .wdiff-options{display:flex;gap:3px;flex:0 0 auto;}
-  .modal-card .wdiff-options button{width:auto;background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;}
+  /* justify-content:flex-start + a fixed-width name column (item 1), not space-between — the
+     options group is meant to sit a modest gap after the name, not shoved flush to the far right
+     edge of a now-wider modal. The fixed width also keeps every row's E/M/H group aligned to the
+     same column regardless of how long each weapon's name is. */
+  .wdiff-row{display:flex;align-items:center;justify-content:flex-start;gap:18px;padding:4px 0;}
+  .wdiff-name{font-size:13.5px;color:var(--ink);flex:0 0 180px;}
+  .wdiff-options{display:flex;gap:4px;flex:0 0 auto;}
+  .modal-card .wdiff-options button{width:auto;background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:5px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}
   .modal-card .wdiff-options button:hover,.modal-card .wdiff-options button.on{background:var(--panel-line);color:var(--ink);}
   #weaponDifficultyList .category{margin-bottom:16px;}
   #weaponDifficultyList .cat-head{margin-bottom:4px;}
+  /* Exclude Weapons (item 1, step 2): a capped-height scroll box inside the round-config panel
+     itself, not a separate modal — the ticket frames it as living directly in the shared panel.
+     Category grouping mirrors Weapon Difficulty's, just compact plain checkboxes instead of a
+     3-way picker, and everything sits inside a fixed max-height so ~45 rows can't blow the panel
+     up the way a full inline list would. */
+  .exclude-weapons-row{align-items:flex-start;}
+  .exclude-weapons-box{flex:1;min-width:180px;max-height:170px;overflow-y:auto;background:#14101f;border:1px solid var(--panel-line);border-radius:8px;padding:8px 12px;}
+  .exclude-weapons-box .category{margin-bottom:8px;}
+  .exclude-weapons-box .category:last-child{margin-bottom:0;}
+  .exclude-weapons-box .cat-head{margin-bottom:2px;}
+  .exclude-weapons-box .cat-head h2{font-size:11px;}
+  .exclude-row{display:flex;align-items:center;gap:7px;padding:2px 0;font-size:12px;color:var(--dim);cursor:pointer;}
+  /* Qualified as ".grid-bingo-config .exclude-row input" (0,2,1), not plain ".exclude-row input"
+     (0,1,1) — ".grid-bingo-config input{width:110px;padding:8px 10px;background:...}" below is the
+     same specificity and declared later, so a plain single-class rule here would lose the tie and
+     these checkboxes would render as a stretched 110px box instead of a normal checkbox — the same
+     mistake already fixed twice this session for the sticky-close button and the E/M/H buttons. */
+  .grid-bingo-config .exclude-row input{width:auto;margin:0;padding:0;background:none;border:none;}
+  .exclude-row span{flex:1;}
   .bingo-config-actions{display:flex;justify-content:flex-end;gap:8px;}
   .bingo-config-actions button{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:8px;padding:8px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;}
   .bingo-config-actions button:hover{border-color:var(--mark);color:var(--ink);}
@@ -260,7 +283,12 @@
   .tile-sizes button:focus-visible{outline:2px solid var(--mark);outline-offset:1px;}
 
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--tile-min),1fr));gap:10px;}
-  .grid.bingo-grid{grid-template-columns:repeat(var(--bingo-size),minmax(0,1fr));}
+  /* Fixed-count grids (item 4): minmax(0,1fr) columns stretch to fill whatever width they're
+     given, so --tile-min alone (which only bounds auto-fill's column count on the "All" mode
+     grid) never actually changed this board's on-screen footprint. Capping max-width to the
+     board's own size × the current tile-size setting, then centering, is what makes Small
+     visibly shrink the whole board and Large grow it while the row/column count stays fixed. */
+  .grid.bingo-grid{grid-template-columns:repeat(var(--bingo-size),minmax(0,1fr));max-width:calc(var(--bingo-size) * var(--tile-min) + (var(--bingo-size) - 1) * 10px);margin:0 auto;}
   .tile{
     position:relative;aspect-ratio:1/1;background:var(--panel);border:1px solid var(--panel-line);
     border-radius:10px;display:flex;align-items:center;justify-content:center;
@@ -315,6 +343,11 @@
   .modal-card.wide{max-width:560px;max-height:82vh;display:flex;flex-direction:column;position:relative;}
   .modal-card.wide .history-modal-scroll{overflow-y:auto;min-height:0;}
   .modal-card.wide .round-history{margin-top:0;}
+  /* Widened specifically for Weapon Difficulty (item 1) — a plain ".modal-card.wide" override
+     would also widen the History modal, which nobody asked to change; the #weaponDifficultyModal
+     prefix (id + two classes) safely outranks the shared two-class rule above regardless of
+     source order, so only this one modal grows. */
+  #weaponDifficultyModal .modal-card.wide{max-width:640px;}
   /* Qualified as ".modal-card button.modal-sticky-close" (not just ".modal-sticky-close") on
      purpose: the generic ".modal-card button" rule below is class+type (0,1,1), which beats a
      bare single-class selector (0,1,0) regardless of source order — that mismatch was the actual
@@ -553,6 +586,14 @@
   </div>
   <div class="grid-bingo-config" id="gridBingoConfig">
     <div class="bingo-config-row"><label>Game Mode</label><div class="bingo-options" id="gameModeOptions"></div></div>
+    <!-- Applies to every Game Mode alike (item 1), so it lives above the mode-specific rows below
+         rather than being duplicated per mode. Checkboxes, not a 3-way picker (item 2's own control
+         is the picker; this is a plain multi-select) — category-grouped like Weapon Difficulty,
+         but capped-height/scrollable to actually stay compact with ~45 rows. -->
+    <div class="bingo-config-row exclude-weapons-row" id="excludeWeaponsRow">
+      <label>Exclude weapons</label>
+      <div class="exclude-weapons-box" id="excludeWeaponsBox"></div>
+    </div>
     <div class="bingo-config-row" id="gridSizeRow"><label>Grid size</label><div class="bingo-options" id="gridSizeOptions"></div></div>
     <div class="bingo-config-row" id="cardModeRow"><label>Card mode</label><div class="bingo-options" id="cardModeOptions"></div></div>
     <div class="bingo-config-row" id="cardVisibilityRow"><label>Card visibility</label><div class="bingo-options" id="cardVisibilityOptions"></div></div>
@@ -579,6 +620,16 @@
       <label class="toggle-row">
         <span class="toggle-switch"><input type="checkbox" id="tttDrawOnFullCheckbox"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
         <span>End as a draw if the grid fills with no line</span>
+      </label>
+    </div>
+    <!-- Shown only when weapon_difficulty has at least one "hard" tag (item 2) and hidden for
+         "All" mode, which uses the full remaining pool by definition. -->
+    <div class="bingo-config-row" id="maxHardWeaponsRow"><label>Max hard weapons</label><div class="bingo-options" id="maxHardWeaponsOptions"></div></div>
+    <div class="bingo-config-row" id="freeSquareRow">
+      <label>Free square</label>
+      <label class="toggle-row">
+        <span class="toggle-switch"><input type="checkbox" id="freeSquareCheckbox"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+        <span>Everyone starts with one random square already marked/claimed</span>
       </label>
     </div>
     <div class="bingo-config-actions"><button id="cancelGridBingoBtn" type="button">Cancel</button><button id="confirmGridBingoBtn" class="primary" type="button">Start Round</button></div>
@@ -1233,6 +1284,10 @@ let roundEntries = [];
 let roundViewingId = null;
 let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisibility:"hidden",teamFormation:"random",manualTeams:{},teamSharedEdit:false,underdogBonus:"none"};
 let tttConfig = {gridSize:3,teamFormation:"random",manualTeams:{},takeBacks:false,drawOnFull:false};
+// Step 2 of the difficulty system: shared by every Game Mode (unlike gridBingoConfig/tttConfig,
+// which are per-mode), since exclusion/hard-cap/free-square all apply identically across Grid,
+// All, and Tic-Tac-Toe per the ticket.
+let cardFilterConfig = {excludedWeapons:[], maxHardWeapons:null, freeSquare:false};
 let rosterBaseline = null;
 let roomIsPublic = false;
 let publicRoomsList = [];
@@ -1244,10 +1299,13 @@ let personalHistoryNames = {};
 // save used to send "Easy"/"Medium"/"Hard" and get silently rejected with a 400 (see item 1 fix in
 // Store.saveWeaponDifficulty). label/title stay capitalized for display; value is what persists.
 let weaponDifficulty = {};
+// glow reuses the same hues as this app's existing --utility/--primary/--melee category accents
+// (green/orange/red), just as a soft ~35%-alpha rgba rather than the opaque hex those variables
+// hold, matching the accent.soft glow buildTeamAssignRows already uses for a selected team button.
 const WEAPON_DIFFICULTY_LEVELS = [
-  {value:"easy", label:"E", title:"Easy"},
-  {value:"medium", label:"M", title:"Medium"},
-  {value:"hard", label:"H", title:"Hard"}
+  {value:"easy", label:"E", title:"Easy", glow:"rgba(77,255,166,.35)"},
+  {value:"medium", label:"M", title:"Medium", glow:"rgba(255,157,77,.35)"},
+  {value:"hard", label:"H", title:"Hard", glow:"rgba(255,77,106,.35)"}
 ];
 let historyFilters = {room:"", opponent:"", result:"", mvpOnly:false, gameMode:""};
 // Guards the join-screen inline history dashboard (item 4) so it loads once per visit to that
@@ -1301,10 +1359,56 @@ function shuffle(items){
   }
   return out;
 }
-function makeRoundCard(size, sharedCard){
-  return sharedCard ? sharedCard.slice() : shuffle(ALL.map(item => item.name)).slice(0, size * size);
+// Step 2 of the difficulty system: excludedWeapons/maxHardWeapons are read off the persisted
+// round object at every call site (not the transient cardFilterConfig), so a late-joining
+// individual-card-mode entry generated in syncNow() draws from the exact same pool/cap the round
+// was actually created with, not whatever happens to be sitting in the config panel by then.
+function weaponPool(excludedWeapons){
+  const excluded = new Set(excludedWeapons || []);
+  return ALL.map(item => item.name).filter(name => !excluded.has(name));
 }
-function fullCard(){ return ALL.map(item => item.name); }
+function isHardWeapon(name){ return weaponDifficulty[name] === "hard"; }
+// Best-effort cap, not a hard guarantee: generate normally, then swap excess "hard" weapons for a
+// random non-hard/non-excluded/not-already-on-card replacement. If the pool can't supply enough
+// non-hard replacements (heavily excluded pool, tiny grid), the leftover hard weapons stay rather
+// than crash or duplicate a tile.
+function applyHardCap(picked, maxHard, pool){
+  if(!maxHard) return picked;
+  const hardPositions = picked.map((name, i) => isHardWeapon(name) ? i : -1).filter(i => i >= 0);
+  if(hardPositions.length <= maxHard) return picked;
+  const out = picked.slice();
+  const onCard = new Set(out);
+  const replacements = shuffle(pool.filter(name => !isHardWeapon(name) && !onCard.has(name)));
+  shuffle(hardPositions).slice(0, hardPositions.length - maxHard).forEach((pos, k) => {
+    if(replacements[k] === undefined) return;
+    onCard.delete(out[pos]);
+    out[pos] = replacements[k];
+    onCard.add(out[pos]);
+  });
+  return out;
+}
+function makeRoundCard(size, sharedCard, excludedWeapons, maxHardWeapons){
+  if(sharedCard) return sharedCard.slice();
+  const pool = weaponPool(excludedWeapons);
+  return applyHardCap(shuffle(pool).slice(0, size * size), maxHardWeapons, pool);
+}
+function fullCard(excludedWeapons){ return weaponPool(excludedWeapons); }
+// Step 2, item 3: picks the free/wildcard square from the card's OWN weapon list (never a special
+// placeholder tile) — same mechanism as the existing team handicap pre-marks (marks/marked_by set
+// at entry creation), but tagged with a real playerId rather than HANDICAP_PLAYER_ID, so it counts
+// as a genuinely earned tile for tiles/lines scoring instead of being excluded like a handicap
+// freebie (see teamScoringInputs' isRealMark / canEditTile's HANDICAP_PLAYER_ID checks).
+function applyFreeSquare(card, marks, markedBy, ownerId){
+  // Picks from whatever's still unmarked (falls back to the full card only if somehow nothing is
+  // unmarked) so it can never collide with an already-placed handicap pre-mark and silently
+  // "promote" it to a real, scoring-eligible tile by overwriting its markedBy entry.
+  const pool = card.filter(name => !marks[name]);
+  const from = pool.length ? pool : card;
+  if(!from.length) return;
+  const name = from[Math.floor(Math.random() * from.length)];
+  marks[name] = true;
+  markedBy[name] = {playerId:ownerId, at:Date.now()};
+}
 function roundSizeLabel(round){
   return round.layout === "all" ? "All" : `${round.grid_size}x${round.grid_size}`;
 }
@@ -1689,10 +1793,17 @@ async function syncNow(){
     // Team rounds (item 2) always pre-create both team entries at round start — never auto-add a
     // per-player entry for one, or every teammate's next sync would spawn a stray solo entry.
     if(activeRound && !activeRound.ended_at && !activeRound.teams && !roundEntries.some(entry => entry.player_id === me.id)){
+      // Reads excluded_weapons/max_hard_weapons off the persisted round (step 2), not
+      // cardFilterConfig — a late joiner's own individual card must draw from the exact same pool
+      // the round was actually created with, not whatever's currently sitting in the config panel.
       const card = activeRound.layout === "all"
-        ? fullCard()
-        : makeRoundCard(Number(activeRound.grid_size), activeRound.card_mode === "shared" ? activeRound.shared_card : null);
-      await Store.addRoundEntry({round_id:activeRound.id, player_id:me.id, player_name:me.name, card, marks:{}, marked_by:{}, blocked_attempts:{}, lines_completed:0, points:0, finished_at:null, version:0});
+        ? fullCard(activeRound.excluded_weapons)
+        : makeRoundCard(Number(activeRound.grid_size), activeRound.card_mode === "shared" ? activeRound.shared_card : null, activeRound.excluded_weapons, activeRound.max_hard_weapons);
+      const marks = {}, markedBy = {};
+      if(activeRound.free_square) applyFreeSquare(card, marks, markedBy, me.id);
+      const {tiles, lines} = teamScoringInputs(activeRound, card, marks, markedBy);
+      const points = computeRoundPoints(activeRound, me.id, tiles, lines, false);
+      await Store.addRoundEntry({round_id:activeRound.id, player_id:me.id, player_name:me.name, card, marks, marked_by:markedBy, blocked_attempts:{}, lines_completed:lines, points, finished_at:null, version:0});
       roundEntries = await Store.listRoundEntries(activeRound.id);
     }
     // Blocked-unmark notifications (item 5): tell the tile's actual marker when someone else tried
@@ -1990,11 +2101,16 @@ function renderRoomBar(){
 
 // Tile size only matters while looking at a round's grid now — no more default 43-weapon
 // tracker to browse, so there's no other context where it'd apply (item 8).
+// Broadened (item 4) to any LIVE round regardless of mode — Grid Bingo's square layout and Tic
+// Tac Toe both render the same fixed .bingo-grid the size picker now actually affects (see the
+// max-width fix on .grid.bingo-grid), not just "All" mode's own auto-fill grid. The reset button
+// stays exactly as-is: All mode, live, only.
 function renderResetAndTileControls(){
   const tileBox = document.getElementById("tileSizes");
   const resetBtn = document.getElementById("resetBtn");
-  tileBox.style.display = activeRound ? "" : "none";
-  const allModeLive = Boolean(activeRound && !activeRound.ended_at && activeRound.layout === "all");
+  const roundLive = Boolean(activeRound && !activeRound.ended_at);
+  tileBox.style.display = roundLive ? "" : "none";
+  const allModeLive = Boolean(roundLive && activeRound.layout === "all");
   if(!allModeLive){
     resetBtn.style.display = "none";
     return;
@@ -2224,6 +2340,43 @@ function renderGridBingoControls(){
   if(!inRoom || hasRound) document.getElementById("gridBingoConfig").dataset.open = "false";
 }
 
+// Exclude Weapons (step 2, item 1): same .category/.cat-head grouping as Weapon Difficulty and
+// renderCategorySections, but each row is a single checkbox toggle, not a 3-way picker — a
+// weapon is either excluded from this round's card generation or it isn't. Reads/writes straight
+// into cardFilterConfig.excludedWeapons, an array (not a Set) since it's persisted to
+// rounds.excluded_weapons verbatim at round start.
+function buildExcludeWeaponsBox(){
+  const container = document.getElementById("excludeWeaponsBox");
+  container.innerHTML = "";
+  const excluded = new Set(cardFilterConfig.excludedWeapons);
+  Object.keys(DATA).forEach(cat => {
+    const items = ALL.filter(i => i.cat === cat);
+    const section = document.createElement("div");
+    section.className = "category";
+    const head = document.createElement("div");
+    head.className = "cat-head cat-" + cat.toLowerCase();
+    head.innerHTML = `<h2>${cat}</h2><div class="cat-bar"></div>`;
+    section.appendChild(head);
+    items.forEach(i => {
+      const row = document.createElement("label");
+      row.className = "exclude-row";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = excluded.has(i.name);
+      checkbox.addEventListener("change", () => {
+        cardFilterConfig.excludedWeapons = checkbox.checked
+          ? [...cardFilterConfig.excludedWeapons, i.name]
+          : cardFilterConfig.excludedWeapons.filter(n => n !== i.name);
+      });
+      const span = document.createElement("span");
+      span.textContent = i.name;
+      row.appendChild(checkbox);
+      row.appendChild(span);
+      section.appendChild(row);
+    });
+    container.appendChild(section);
+  });
+}
 function buildBingoOptions(id, options, selected, onChange){
   const box = document.getElementById(id);
   box.innerHTML = "";
@@ -2235,7 +2388,13 @@ function buildBingoOptions(id, options, selected, onChange){
     // label out) — every other existing caller omits `title` on its option objects, so this is a
     // pure opt-in with no effect on them.
     if(option.title) button.title = option.title;
-    button.className = option.value === selected ? "on" : "";
+    const isSelected = option.value === selected;
+    button.className = isSelected ? "on" : "";
+    // Optional (item 2: weapon difficulty wants a distinct colored glow per level, not just the
+    // shared background-color swap) — same inline box-shadow-glow technique buildTeamAssignRows
+    // already uses for a selected team button, just driven by a per-option color instead of a
+    // per-player accent. Every other existing caller omits `glow`, so this is a pure opt-in.
+    if(isSelected && option.glow) button.style.boxShadow = `0 0 10px 3px ${option.glow}`;
     button.addEventListener("click", () => onChange(option.value));
     box.appendChild(button);
   });
@@ -2318,6 +2477,12 @@ function buildStartRoundConfig(){
     buildStartRoundConfig();
   });
 
+  // Exclude Weapons applies identically to every Game Mode (step 2, item 1) — rebuilt every call
+  // like the rest of this panel, reading straight from cardFilterConfig.excludedWeapons so a mode
+  // switch never loses the selection.
+  buildExcludeWeaponsBox();
+  document.getElementById("freeSquareCheckbox").checked = Boolean(cardFilterConfig.freeSquare);
+
   // Grid size: shown for Grid and Tic-Tac-Toe, not All (only one possible layout there).
   document.getElementById("gridSizeRow").style.display = isAll ? "none" : "";
   if(!isAll){
@@ -2336,6 +2501,18 @@ function buildStartRoundConfig(){
   // is on — with take-backs off a full grid is always unambiguously a draw already.
   document.getElementById("takeBacksRow").style.display = isTTT ? "" : "none";
   document.getElementById("drawOnFullRow").style.display = (isTTT && tttConfig.takeBacks) ? "" : "none";
+
+  // Max Hard Weapons (step 2, item 2): only worth showing once at least one weapon is actually
+  // tagged "hard" — otherwise the control has nothing to do. Hidden for "All" mode by definition
+  // (it uses the full remaining pool, no per-card draw to cap).
+  const anyHardTagged = Object.values(weaponDifficulty).some(d => d === "hard");
+  document.getElementById("maxHardWeaponsRow").style.display = (anyHardTagged && !isAll) ? "" : "none";
+  if(anyHardTagged && !isAll){
+    buildBingoOptions("maxHardWeaponsOptions", [{label:"No limit",value:null},{label:"1",value:1},{label:"2",value:2},{label:"3",value:3}], cardFilterConfig.maxHardWeapons, value => {
+      cardFilterConfig.maxHardWeapons = value;
+      buildStartRoundConfig();
+    });
+  }
 
   if(!isTTT){
     if(!isAll){
@@ -2382,10 +2559,22 @@ async function startTicTacToe(){
   const roundId = crypto.randomUUID ? crypto.randomUUID() : "round-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
   const members = Object.entries(boards);
   const size = Number(tttConfig.gridSize);
-  const sharedCard = makeRoundCard(size); // no repeats, full weapon pool — same mechanism as Grid Bingo
+  // no repeats, filtered weapon pool, hard-capped — same mechanism as Grid Bingo (step 2)
+  const sharedCard = makeRoundCard(size, null, cardFilterConfig.excludedWeapons, cardFilterConfig.maxHardWeapons);
   const teams = isTeamRoomSize(members)
     ? buildTeams(members, tttConfig)
     : {"team-A":[members[0][0]], "team-B":[members[1][0]]};
+  // Free square (step 2, item 3) design call: TTT is a symmetric 2-side competition, so ONE free
+  // square for only one side would be a real, potentially game-deciding advantage rather than a
+  // wildcard bonus — unlike Grid Bingo's race, where a free tile just nudges everyone forward
+  // equally. Each side gets its OWN random pre-claim instead, mirroring how Grid Bingo's
+  // individual-card mode gives each player their own free square on their own card.
+  const claims = {};
+  if(cardFilterConfig.freeSquare && sharedCard.length >= 2){
+    const [freeA, freeB] = shuffle(sharedCard).slice(0, 2);
+    claims[freeA] = {side:"team-A", playerId:(teams["team-A"] || [])[0] || null, at:Date.now()};
+    claims[freeB] = {side:"team-B", playerId:(teams["team-B"] || [])[0] || null, at:Date.now()};
+  }
   const round = {
     id:roundId,
     room_code:currentRoomCode(),
@@ -2397,9 +2586,12 @@ async function startTicTacToe(){
     scoring_mode:"race",
     card_visibility:"visible",
     shared_card:sharedCard,
-    claims:{},
+    claims,
     take_backs:Boolean(tttConfig.takeBacks),
     draw_on_full:Boolean(tttConfig.drawOnFull),
+    excluded_weapons:cardFilterConfig.excludedWeapons,
+    max_hard_weapons:cardFilterConfig.maxHardWeapons,
+    free_square:Boolean(cardFilterConfig.freeSquare),
     winner_id:null,
     ended_at:null,
     started_by:me.name,
@@ -2419,8 +2611,10 @@ async function startTicTacToe(){
   renderAll();
 }
 
-function makeRoundEntry(playerId, playerName, card, roundId){
-  return {round_id:roundId, player_id:playerId, player_name:playerName, card, marks:{}, marked_by:{}, blocked_attempts:{}, lines_completed:0, points:0, finished_at:null, version:0};
+// marks/markedBy/lines/points optional (step 2, item 3): only the free-square path passes them
+// in pre-populated — every other caller keeps the original all-zero shape unchanged.
+function makeRoundEntry(playerId, playerName, card, roundId, marks, markedBy, linesCompleted, points){
+  return {round_id:roundId, player_id:playerId, player_name:playerName, card, marks:marks || {}, marked_by:markedBy || {}, blocked_attempts:{}, lines_completed:linesCompleted || 0, points:points || 0, finished_at:null, version:0};
 }
 
 // Random split: shuffle everyone present, then divide as evenly as possible (item 1). Manual
@@ -2454,7 +2648,7 @@ async function startTeamGridBingo(roundId, members){
   // Same pattern as the solo path's sharedCard: generated ONCE here (not per-entry) so both teams
   // get an identical copy under "shared" mode — computing it inside the per-team loop would give
   // each team its own independent shuffle even though the size matched, which isn't "shared".
-  const sharedCard = isAll ? fullCard() : (cardMode === "shared" ? makeRoundCard(gridBingoConfig.gridSize) : null);
+  const sharedCard = isAll ? fullCard(cardFilterConfig.excludedWeapons) : (cardMode === "shared" ? makeRoundCard(gridBingoConfig.gridSize, null, cardFilterConfig.excludedWeapons, cardFilterConfig.maxHardWeapons) : null);
   const round = {
     id:roundId,
     room_code:currentRoomCode(),
@@ -2471,7 +2665,10 @@ async function startTeamGridBingo(roundId, members){
     ended_by:null,
     teams,
     team_shared_edit:Boolean(gridBingoConfig.teamSharedEdit),
-    underdog_bonus:gridBingoConfig.underdogBonus || "none"
+    underdog_bonus:gridBingoConfig.underdogBonus || "none",
+    excluded_weapons:cardFilterConfig.excludedWeapons,
+    max_hard_weapons:isAll ? null : cardFilterConfig.maxHardWeapons,
+    free_square:Boolean(cardFilterConfig.freeSquare)
   };
   const sizeA = teams["team-A"].length, sizeB = teams["team-B"].length;
   const playerGap = Math.abs(sizeA - sizeB);
@@ -2481,7 +2678,7 @@ async function startTeamGridBingo(roundId, members){
     // Handicap compatibility (item 5): each entry still gets its own independent marks/marked_by
     // object below, even when card is an identical shared copy — the smaller team's handicap
     // pre-marks only ever touch THEIR entry, never the other team's, regardless of card_mode.
-    const card = sharedCard ? sharedCard.slice() : (isAll ? fullCard() : makeRoundCard(round.grid_size));
+    const card = sharedCard ? sharedCard.slice() : (isAll ? fullCard(cardFilterConfig.excludedWeapons) : makeRoundCard(round.grid_size, null, cardFilterConfig.excludedWeapons, cardFilterConfig.maxHardWeapons));
     const marks = {};
     const markedBy = {};
     // Proportional handicap for uneven teams (item 4): scales with how big a fraction of the
@@ -2493,6 +2690,10 @@ async function startTeamGridBingo(roundId, members){
       const handicapTiles = Math.min(card.length - 1, Math.round(card.length * (playerGap / largerTeamSize)));
       shuffle(card).slice(0, handicapTiles).forEach(name => { marks[name] = true; markedBy[name] = {playerId:HANDICAP_PLAYER_ID, at:0}; });
     }
+    // Free square (step 2, item 3): a real earned tile, not a handicap freebie — tagged with an
+    // actual member's id (the team's first present player) rather than HANDICAP_PLAYER_ID, so it
+    // counts in tiles/lines/points and isn't permanently locked the way a handicap tile is.
+    if(round.free_square) applyFreeSquare(card, marks, markedBy, (teams[teamKey] || [])[0] || teamKey);
     const {tiles, lines} = teamScoringInputs(round, card, marks, markedBy);
     const points = computeRoundPoints(round, teamKey, tiles, lines, false); // never "full" at creation
     return {round_id:roundId, player_id:teamKey, player_name:teamKey === "team-A" ? "Team A" : "Team B", card, marks, marked_by:markedBy, blocked_attempts:{}, lines_completed:lines, points, finished_at:null, version:0};
@@ -2513,7 +2714,7 @@ async function startGridBingo(){
   // rounds — "All" still uses one shared card (there's genuinely only one possible card there),
   // but no longer forces "visible" regardless of what was actually configured.
   const isAll = gridBingoConfig.gridSize === "all";
-  const sharedCard = isAll ? fullCard() : (gridBingoConfig.cardMode === "shared" ? makeRoundCard(gridBingoConfig.gridSize) : null);
+  const sharedCard = isAll ? fullCard(cardFilterConfig.excludedWeapons) : (gridBingoConfig.cardMode === "shared" ? makeRoundCard(gridBingoConfig.gridSize, null, cardFilterConfig.excludedWeapons, cardFilterConfig.maxHardWeapons) : null);
   const round = {
     id:roundId,
     room_code:currentRoomCode(),
@@ -2527,11 +2728,18 @@ async function startGridBingo(){
     winner_id:null,
     ended_at:null,
     started_by:me.name,
-    ended_by:null
+    ended_by:null,
+    excluded_weapons:cardFilterConfig.excludedWeapons,
+    max_hard_weapons:isAll ? null : cardFilterConfig.maxHardWeapons,
+    free_square:Boolean(cardFilterConfig.freeSquare)
   };
   const entries = members.map(([id,board]) => {
-    const card = sharedCard ? sharedCard.slice() : (isAll ? fullCard() : makeRoundCard(round.grid_size));
-    return makeRoundEntry(id, board.name, card, roundId);
+    const card = sharedCard ? sharedCard.slice() : (isAll ? fullCard(cardFilterConfig.excludedWeapons) : makeRoundCard(round.grid_size, null, cardFilterConfig.excludedWeapons, cardFilterConfig.maxHardWeapons));
+    const marks = {}, markedBy = {};
+    if(round.free_square) applyFreeSquare(card, marks, markedBy, id);
+    const {tiles, lines} = teamScoringInputs(round, card, marks, markedBy);
+    const points = computeRoundPoints(round, id, tiles, lines, false); // never "full" at creation
+    return makeRoundEntry(id, board.name, card, roundId, marks, markedBy, lines, points);
   });
   await Store.createRound(round, entries);
   await syncNow();
@@ -3356,15 +3564,26 @@ document.getElementById("tttTakeBacksCheckbox").addEventListener("change", e => 
 document.getElementById("tttDrawOnFullCheckbox").addEventListener("change", e => {
   tttConfig.drawOnFull = e.target.checked;
 });
+document.getElementById("freeSquareCheckbox").addEventListener("change", e => {
+  cardFilterConfig.freeSquare = e.target.checked;
+});
 document.getElementById("muteBtn").addEventListener("click", async () => {
   me.muted = !me.muted;
   renderMuteButton();
   try{ await Store.saveProfile(me.id, {muted:me.muted}); }catch(e){ console.error("mute save failed", e); }
 });
-document.getElementById("zoomSlider").addEventListener("input", async e => {
+// Split instant visual feedback from the network save (item 3): every "input" event during a
+// drag still applies/renders the zoom immediately, but the actual Store.saveProfile() call now
+// only fires on "change" — which a range input dispatches once when dragging stops (mouseup/
+// touchend/keyup), not on every intermediate value during the drag itself. A mouse/trackpad drag
+// can fire dozens of "input" events; saving on each one was the source of the perceptible lag.
+document.getElementById("zoomSlider").addEventListener("input", e => {
   me.pageZoom = Number(e.target.value);
   applyPageZoom();
   renderZoomControl();
+});
+document.getElementById("zoomSlider").addEventListener("change", async e => {
+  me.pageZoom = Number(e.target.value);
   try{ await Store.saveProfile(me.id, {page_zoom:me.pageZoom}); }catch(e){ console.error("zoom save failed", e); }
 });
 document.getElementById("copyRoomLink").addEventListener("click", async e => {
@@ -3816,6 +4035,14 @@ async function onLoggedIn(newSession){
   me.roomCode = await Store.getMyRoom(me.id);
   const requestedRoom = roomCodeFromUrl();
   if(requestedRoom && requestedRoom !== me.roomCode) await switchToRoom(requestedRoom);
+  // Loaded once at login (step 2, item 2) so the round-config panel's "Max Hard Weapons" row can
+  // decide whether to show itself the first time it's opened, without waiting on the separate
+  // Weapon Difficulty modal ever having been opened this session. That modal still refetches its
+  // own fresh copy every time it opens — this is just an early baseline, not a substitute for it.
+  try{
+    const rows = await Store.listWeaponDifficulty();
+    weaponDifficulty = Object.fromEntries(rows.map(r => [r.weapon_name, r.difficulty]));
+  }catch(e){ console.error("weapon difficulty load failed", e); }
   await syncNow();
   renderAll();
   startPolling();
