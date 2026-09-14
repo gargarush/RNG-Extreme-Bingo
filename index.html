@@ -404,6 +404,7 @@
     <span>Logged in as <strong id="accountName"></strong></span>
     <div class="room-actions">
       <button id="historyBtn" type="button">History</button>
+      <button id="weaponDifficultyBtn" type="button">Weapon Difficulty</button>
       <button id="settingsBtn" type="button">Settings</button>
       <button id="logoutBtn" type="button">Log out</button>
     </div>
@@ -671,6 +672,21 @@
   </div>
 </div>
 
+<!-- Foundational tagging tool (item 1): no gameplay changes yet, just weapon_difficulty data entry.
+     Reuses .category/.cat-head (the same grouping the round board uses) and buildBingoOptions()
+     (the same button-group builder as the grid-size/game-mode pickers) row by row. -->
+<div class="modal" id="weaponDifficultyModal">
+  <div class="modal-card wide">
+    <button id="closeWeaponDifficultyBtnTop" class="modal-sticky-close" type="button" aria-label="Close">&times;</button>
+    <div class="history-modal-scroll">
+      <h3>Weapon Difficulty</h3>
+      <p>Tag how hard each weapon is to use. Changes save instantly.</p>
+      <div id="weaponDifficultyList"></div>
+      <button id="closeWeaponDifficultyBtn" class="auth-toggle-btn" type="button">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="deleteAccountModal">
   <div class="modal-card">
     <h3>Delete your account?</h3>
@@ -761,6 +777,25 @@ const Store = {
       body:JSON.stringify(patch)
     });
     if(!res.ok) throw new Error("profile save failed " + res.status);
+  },
+  // Weapon difficulty tagging (foundational — no gameplay reads this yet). weapon_name is the
+  // table's natural key, so every save is a single upsert (Prefer: resolution=merge-duplicates)
+  // rather than a separate insert-vs-update branch — same instant-persist-on-click shape as
+  // saveProfile's accent/tile-size patches above, just a different table.
+  async listWeaponDifficulty(){
+    const res = await fetch(`${REMOTE.url}/rest/v1/weapon_difficulty?select=weapon_name,difficulty`, {
+      headers:authHeaders()
+    });
+    if(!res.ok) throw new Error("weapon difficulty fetch failed " + res.status);
+    return await res.json();
+  },
+  async saveWeaponDifficulty(weaponName, difficulty){
+    const res = await fetch(`${REMOTE.url}/rest/v1/weapon_difficulty?on_conflict=weapon_name`, {
+      method:"POST",
+      headers:authHeaders({"Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=minimal"}),
+      body:JSON.stringify([{weapon_name:weaponName, difficulty}])
+    });
+    if(!res.ok) throw new Error("weapon difficulty save failed " + res.status);
   },
   // Which room (if any) this user currently has a presence row in — the source of truth for
   // me.roomCode on load, instead of trusting anything persisted client-side.
@@ -1171,6 +1206,10 @@ let roomIsPublic = false;
 let publicRoomsList = [];
 let personalHistory = [];
 let personalHistoryNames = {};
+// weapon name -> "Easy"/"Medium"/"Hard" (item 3: loaded fresh each time the modal opens, merged
+// with ALL so untagged weapons still get a row defaulted to "Medium", matching the table default).
+let weaponDifficulty = {};
+const WEAPON_DIFFICULTY_LEVELS = ["Easy", "Medium", "Hard"];
 let historyFilters = {room:"", opponent:"", result:"", mvpOnly:false, gameMode:""};
 // Guards the join-screen inline history dashboard (item 4) so it loads once per visit to that
 // screen rather than on every renderJoinRoomBar() call (i.e. every sync tick) — reset to false by
@@ -2790,6 +2829,51 @@ function renderCategorySections(container, marksSource, editable, onToggle, mask
   });
 }
 
+// Weapon Difficulty tagging tool (item 1/2/3): same .category/.cat-head grouping as
+// renderCategorySections above, but each row is a plain label + buildBingoOptions() button-group
+// instead of a tile grid — there's no card/marks state here, just one flat weapon_difficulty value
+// per weapon. Untagged weapons read as "Medium" (weaponDifficulty[name] falls back below), matching
+// the table's own default, so every row always has a selected button.
+function renderWeaponDifficultyModal(){
+  const container = document.getElementById("weaponDifficultyList");
+  container.innerHTML = "";
+  Object.keys(DATA).forEach(cat => {
+    const items = ALL.filter(i => i.cat === cat);
+    const section = document.createElement("div");
+    section.className = "category";
+    const head = document.createElement("div");
+    head.className = "cat-head cat-" + cat.toLowerCase();
+    head.innerHTML = `<h2>${cat}</h2><div class="cat-bar"></div>`;
+    section.appendChild(head);
+    items.forEach(i => {
+      const row = document.createElement("div");
+      row.className = "bingo-config-row";
+      const label = document.createElement("label");
+      label.textContent = i.name;
+      row.appendChild(label);
+      const options = document.createElement("div");
+      options.className = "bingo-options";
+      options.id = "wdiffOptions-" + slug(i.name);
+      row.appendChild(options);
+      section.appendChild(row);
+    });
+    container.appendChild(section);
+  });
+  // buildBingoOptions() needs each target element already in the DOM, so this pass runs after
+  // every row above has been appended, same two-pass shape team-assign rows already use elsewhere.
+  ALL.forEach(i => buildWeaponDifficultyRowOptions(i.name, weaponDifficulty[i.name] || "Medium"));
+}
+function buildWeaponDifficultyRowOptions(name, selected){
+  const options = WEAPON_DIFFICULTY_LEVELS.map(level => ({label:level, value:level}));
+  buildBingoOptions("wdiffOptions-" + slug(name), options, selected, value => {
+    // No separate Save button (item 2): update local state, redraw this row's own buttons so the
+    // selection reflects instantly, then persist — same click-to-persist shape as accent/tile size.
+    weaponDifficulty[name] = value;
+    buildWeaponDifficultyRowOptions(name, value);
+    Store.saveWeaponDifficulty(name, value).catch(e => console.error("weapon difficulty save failed", e));
+  });
+}
+
 function renderRoundBoard(){
   const own = currentRoundEntry();
   if(!own) return;
@@ -3476,6 +3560,26 @@ function wireHistoryFilterListeners(suffix){
   });
 }
 HISTORY_RENDER_TARGETS.forEach(wireHistoryFilterListeners);
+
+/* ============================ weapon difficulty ============================ */
+document.getElementById("weaponDifficultyBtn").addEventListener("click", async () => {
+  document.getElementById("weaponDifficultyModal").classList.add("show");
+  document.getElementById("weaponDifficultyList").innerHTML = '<div class="empty" style="padding:12px;">Loading…</div>';
+  try{
+    const rows = await Store.listWeaponDifficulty();
+    weaponDifficulty = Object.fromEntries(rows.map(r => [r.weapon_name, r.difficulty]));
+  }catch(e){
+    console.error("weapon difficulty load failed", e);
+    weaponDifficulty = {};
+  }
+  renderWeaponDifficultyModal();
+});
+document.getElementById("closeWeaponDifficultyBtn").addEventListener("click", () => {
+  document.getElementById("weaponDifficultyModal").classList.remove("show");
+});
+document.getElementById("closeWeaponDifficultyBtnTop").addEventListener("click", () => {
+  document.getElementById("weaponDifficultyModal").classList.remove("show");
+});
 
 /* ============================ settings ============================ */
 function showSettingsError(targetId, message){
