@@ -43,10 +43,17 @@
      sibling — otherwise it'd span the full body width instead of lining up with everything else
      that's centered in the 1000px column, while still never inheriting .wrap's zoom scaling
      (CSS zoom doesn't cascade to siblings, only to .wrap and its own descendants). */
-  .zoom-bar{display:flex;align-items:center;gap:10px;max-width:1000px;margin:12px auto 18px;color:var(--dim);font-size:12.5px;}
-  .zoom-bar label{font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11px;}
-  .zoom-bar input[type=range]{accent-color:var(--mark);width:140px;}
-  .zoom-bar span{font-variant-numeric:tabular-nums;min-width:36px;}
+  .zoom-bar{display:flex;align-items:center;gap:8px;max-width:1000px;margin:12px auto 18px;color:var(--dim);font-size:12.5px;}
+  .zoom-bar label{font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11px;margin-right:2px;}
+  /* touch-action:none (item 2) stops the browser from treating a drag on the track as a page
+     scroll/pan gesture on touch devices, which was the actual source of "dragging moves the page
+     instead of the value" — tapping a point on the track already worked fine either way. */
+  .zoom-bar input[type=range]{accent-color:var(--mark);width:140px;touch-action:none;}
+  .zoom-bar .zoom-step{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:6px;width:22px;height:22px;line-height:1;font-size:14px;padding:0;cursor:pointer;font-family:inherit;}
+  .zoom-bar .zoom-step:hover{border-color:var(--mark);color:var(--ink);}
+  .zoom-bar .zoom-value-wrap{display:flex;align-items:center;gap:2px;font-variant-numeric:tabular-nums;}
+  .zoom-bar input[type=number]{width:40px;background:#14101f;border:1px solid var(--panel-line);color:var(--ink);border-radius:6px;padding:2px 4px;font-size:12.5px;font-family:inherit;text-align:right;}
+  .zoom-bar input[type=number]:focus{outline:2px solid var(--mark);outline-offset:1px;}
 
   .progress-track{height:8px;background:var(--panel);border:1px solid var(--panel-line);border-radius:5px;overflow:hidden;}
   .progress-fill{height:100%;background:linear-gradient(90deg,var(--mark),#fff);width:0%;transition:width .35s ease;}
@@ -165,25 +172,23 @@
   .modal-card .wdiff-options button:hover,.modal-card .wdiff-options button.on{background:var(--panel-line);color:var(--ink);}
   #weaponDifficultyList .category{margin-bottom:16px;}
   #weaponDifficultyList .cat-head{margin-bottom:4px;}
-  /* Exclude Weapons (item 1, step 2): a capped-height scroll box inside the round-config panel
-     itself, not a separate modal — the ticket frames it as living directly in the shared panel.
-     Category grouping mirrors Weapon Difficulty's, just compact plain checkboxes instead of a
-     3-way picker, and everything sits inside a fixed max-height so ~45 rows can't blow the panel
-     up the way a full inline list would. */
+  /* Exclude Weapons (step 2 item 1, redesigned item 6): a capped-height scroll box inside the
+     round-config panel itself, not a separate modal. Category grouping mirrors Weapon
+     Difficulty's; each category's weapons render as toggle chips reusing .bingo-options'
+     button/.on styling verbatim (item 6) rather than native checkboxes — the chip grid below is
+     the only new visual language. Qualified as "#excludeWeaponsBox .bingo-options" (id + class,
+     specificity 1,1,0) so it safely overrides plain ".bingo-options"'s flex layout (0,1,0)
+     regardless of source order, instead of relying on a fragile declaration-order tie-break —
+     the same class of bug fixed for the sticky-close button and the E/M/H buttons earlier this
+     session, avoided proactively here rather than hit and fixed after the fact. */
   .exclude-weapons-row{align-items:flex-start;}
-  .exclude-weapons-box{flex:1;min-width:180px;max-height:170px;overflow-y:auto;background:#14101f;border:1px solid var(--panel-line);border-radius:8px;padding:8px 12px;}
-  .exclude-weapons-box .category{margin-bottom:8px;}
+  .exclude-weapons-box{flex:1;min-width:180px;max-height:220px;overflow-y:auto;background:#14101f;border:1px solid var(--panel-line);border-radius:8px;padding:8px 12px;}
+  .exclude-weapons-box .category{margin-bottom:10px;}
   .exclude-weapons-box .category:last-child{margin-bottom:0;}
-  .exclude-weapons-box .cat-head{margin-bottom:2px;}
+  .exclude-weapons-box .cat-head{margin-bottom:4px;}
   .exclude-weapons-box .cat-head h2{font-size:11px;}
-  .exclude-row{display:flex;align-items:center;gap:7px;padding:2px 0;font-size:12px;color:var(--dim);cursor:pointer;}
-  /* Qualified as ".grid-bingo-config .exclude-row input" (0,2,1), not plain ".exclude-row input"
-     (0,1,1) — ".grid-bingo-config input{width:110px;padding:8px 10px;background:...}" below is the
-     same specificity and declared later, so a plain single-class rule here would lose the tie and
-     these checkboxes would render as a stretched 110px box instead of a normal checkbox — the same
-     mistake already fixed twice this session for the sticky-close button and the E/M/H buttons. */
-  .grid-bingo-config .exclude-row input{width:auto;margin:0;padding:0;background:none;border:none;}
-  .exclude-row span{flex:1;}
+  #excludeWeaponsBox .bingo-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:4px;}
+  #excludeWeaponsBox .bingo-options button{width:100%;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .bingo-config-actions{display:flex;justify-content:flex-end;gap:8px;}
   .bingo-config-actions button{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:8px;padding:8px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;}
   .bingo-config-actions button:hover{border-color:var(--mark);color:var(--ink);}
@@ -212,6 +217,11 @@
   .grid-bingo-status.show{display:block;}
   .grid-bingo-status strong{color:var(--ink);}
   .grid-bingo-status .settings-line{font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--dim);margin-bottom:4px;}
+  /* Live-round roster (item 6). */
+  .round-roster{display:none;flex-wrap:wrap;gap:18px;margin:-4px 0 14px;font-size:12.5px;}
+  .round-roster.show{display:flex;}
+  .round-roster .roster-group-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-bottom:2px;}
+  .round-roster .roster-names{color:var(--ink);}
   .bingo-leaderboard{display:none;margin:-4px 0 24px;}
   .bingo-leaderboard.show{display:grid;gap:7px;}
   .bingo-leaderboard .player{padding:9px 12px;}
@@ -308,6 +318,10 @@
   .tile .stamp{display:none;position:absolute;inset:0;align-items:center;justify-content:center;pointer-events:none;}
   .tile .handicap-badge{position:absolute;top:6px;left:6px;width:15px;height:15px;color:var(--dim);pointer-events:none;z-index:1;}
   .tile .handicap-badge svg{width:100%;height:100%;color:inherit;}
+  /* Weapon difficulty badge (item 4) — opposite corner from the handicap badge so the two never
+     collide. Same dot on Grid Bingo tiles and TTT squares (.tile is the shared base class both
+     make*Square helpers use). */
+  .tile .difficulty-dot{position:absolute;top:6px;right:6px;width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.4);pointer-events:none;z-index:1;}
   .tile.done .handicap-badge{color:var(--secondary);}
   .tile.done{background:#241531;border-color:var(--mark);box-shadow:0 0 0 1px var(--mark-soft),0 0 20px var(--mark-soft);}
   .tile.done .name{color:var(--ink);}
@@ -443,8 +457,13 @@
      a fixed-size slider needs to sit somewhere that zoom never touches. -->
 <div class="zoom-bar" id="zoomBar">
   <label for="zoomSlider">Zoom</label>
+  <!-- item 2: two more ways in besides dragging, which is unreliable on some devices — a
+       stepper pair (±2%) and the "%" readout itself as an editable number. All three (drag,
+       step, type) funnel through the same instant-preview + debounced-save split. -->
+  <button type="button" id="zoomStepDown" class="zoom-step" aria-label="Decrease zoom by 2%">&minus;</button>
   <input type="range" id="zoomSlider" min="80" max="150" step="2" value="100">
-  <span id="zoomValue">100%</span>
+  <button type="button" id="zoomStepUp" class="zoom-step" aria-label="Increase zoom by 2%">+</button>
+  <span class="zoom-value-wrap"><input type="number" id="zoomValue" min="80" max="150" step="2" value="100" aria-label="Zoom percent">%</span>
 </div>
 <div class="wrap">
 
@@ -594,6 +613,14 @@
       <label>Exclude weapons</label>
       <div class="exclude-weapons-box" id="excludeWeaponsBox"></div>
     </div>
+    <!-- Applies to every Game Mode alike (spectator mode item 4/5), default on. -->
+    <div class="bingo-config-row" id="spectatorsCanViewRow">
+      <label>Spectators</label>
+      <label class="toggle-row">
+        <span class="toggle-switch"><input type="checkbox" id="spectatorsCanViewCheckbox"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+        <span>Spectators can view boards</span>
+      </label>
+    </div>
     <div class="bingo-config-row" id="gridSizeRow"><label>Grid size</label><div class="bingo-options" id="gridSizeOptions"></div></div>
     <div class="bingo-config-row" id="cardModeRow"><label>Card mode</label><div class="bingo-options" id="cardModeOptions"></div></div>
     <div class="bingo-config-row" id="cardVisibilityRow"><label>Card visibility</label><div class="bingo-options" id="cardVisibilityOptions"></div></div>
@@ -632,10 +659,16 @@
         <span>Everyone starts with one random square already marked/claimed</span>
       </label>
     </div>
+    <!-- Shown only while Free Square is on (item 5). -->
+    <div class="bingo-config-row" id="freeSquareBiasRow"><label>Free square bias</label><div class="bingo-options" id="freeSquareBiasOptions"></div></div>
     <div class="bingo-config-actions"><button id="cancelGridBingoBtn" type="button">Cancel</button><button id="confirmGridBingoBtn" class="primary" type="button">Start Round</button></div>
     <div class="hint-text" id="startRoundHint">Need at least 2 people in this room to start a round.</div>
   </div>
   <div class="grid-bingo-status" id="gridBingoStatus"></div>
+  <!-- Live-round roster (item 6): who's on which side, and who's just spectating — separate from
+       the always-on room-wide #roster above, which is about room membership/points, not "who's
+       actually playing THIS round." Shown only while a round is live. -->
+  <div class="round-roster" id="roundRoster"></div>
   <div class="bingo-leaderboard" id="bingoLeaderboard"></div>
 
   <div id="board"></div>
@@ -1037,31 +1070,26 @@ const Store = {
         headers:authHeaders({"Content-Type":"application/json"}),
         body:JSON.stringify([round])
       });
-      if(!roundRes.ok) throw new Error("round create failed " + roundRes.status);
+      // Response bodies read on failure (defensive, given weapon_difficulty's check-constraint
+      // case-mismatch bug from an earlier round — a bare status code alone hides exactly that
+      // class of error) rather than just the status code.
+      if(!roundRes.ok){
+        const detail = await roundRes.text().catch(() => "");
+        throw new Error(`round create failed ${roundRes.status}: ${detail}`);
+      }
       const entryRes = await fetch(`${REMOTE.url}/rest/v1/round_entries`, {
         method:"POST",
         headers:authHeaders({"Content-Type":"application/json"}),
         body:JSON.stringify(entries)
       });
-      if(!entryRes.ok) throw new Error("round entries create failed " + entryRes.status);
+      if(!entryRes.ok){
+        const detail = await entryRes.text().catch(() => "");
+        throw new Error(`round entries create failed ${entryRes.status}: ${detail}`);
+      }
       return;
     }
     await window.storage.set(ROOM_PREFIX + round.room_code + ":round", JSON.stringify(round), true);
     await window.storage.set(ROOM_PREFIX + "round-entry:" + round.id, JSON.stringify(entries), true);
-  },
-  async addRoundEntry(entry){
-    if(useRemote()){
-      const res = await fetch(`${REMOTE.url}/rest/v1/round_entries`, {
-        method:"POST",
-        headers:authHeaders({"Content-Type":"application/json", Prefer:"resolution=merge-duplicates"}),
-        body:JSON.stringify([entry])
-      });
-      if(!res.ok) throw new Error("round entry create failed " + res.status);
-      return;
-    }
-    const entries = await this.listRoundEntries(entry.round_id);
-    if(!entries.some(x => x.player_id === entry.player_id)) entries.push(entry);
-    await window.storage.set(ROOM_PREFIX + "round-entry:" + entry.round_id, JSON.stringify(entries), true);
   },
   // Optimistic concurrency (item 1): the PATCH only applies if version still matches what the
   // caller last read. A conflict (someone else's write already bumped it) returns 0 rows back —
@@ -1252,10 +1280,14 @@ const TEAM_ACCENTS = {
   "team-A": ACCENTS.find(a => a.id === "violet"),
   "team-B": ACCENTS.find(a => a.id === "orange")
 };
+// Remapped (item 3): old Large (160px) is now roughly the new Small, scaled up across the board
+// so a full board reads closer to how it looked before the resize feature existed. icon/name keep
+// the same proportional relationship to min that the old tiers had (icon ~= 26% of min; name
+// scales more gently than icon, same as before).
 const TILE_SIZES = [
-  {id:"small",label:"Small",min:"95px",icon:"25px",name:"9.5px"},
-  {id:"medium",label:"Medium",min:"112px",icon:"30px",name:"10.5px"},
-  {id:"large",label:"Large",min:"160px",icon:"42px",name:"12px"}
+  {id:"small",label:"Small",min:"160px",icon:"42px",name:"13px"},
+  {id:"medium",label:"Medium",min:"210px",icon:"56px",name:"14.5px"},
+  {id:"large",label:"Large",min:"280px",icon:"76px",name:"16.5px"}
 ];
 
 const HITMARKER = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M7 7 L13 13"/><path d="M25 7 L19 13"/><path d="M7 25 L13 19"/><path d="M25 25 L19 19"/></svg>';
@@ -1287,7 +1319,7 @@ let tttConfig = {gridSize:3,teamFormation:"random",manualTeams:{},takeBacks:fals
 // Step 2 of the difficulty system: shared by every Game Mode (unlike gridBingoConfig/tttConfig,
 // which are per-mode), since exclusion/hard-cap/free-square all apply identically across Grid,
 // All, and Tic-Tac-Toe per the ticket.
-let cardFilterConfig = {excludedWeapons:[], maxHardWeapons:null, freeSquare:false};
+let cardFilterConfig = {excludedWeapons:[], maxHardWeapons:null, freeSquare:false, freeSquareBias:"random", spectatorsCanView:true};
 let rosterBaseline = null;
 let roomIsPublic = false;
 let publicRoomsList = [];
@@ -1307,6 +1339,16 @@ const WEAPON_DIFFICULTY_LEVELS = [
   {value:"medium", label:"M", title:"Medium", glow:"rgba(255,157,77,.35)"},
   {value:"hard", label:"H", title:"Hard", glow:"rgba(255,77,106,.35)"}
 ];
+// Same color mapping as the glow above (item 4), just its solid --utility/--primary/--melee hue
+// instead of the soft alpha version — a small dot reads better solid than translucent at that
+// size. Untagged weapons show medium's color, matching weaponDifficulty's own "medium" default.
+const DIFFICULTY_DOT_COLOR = {easy:"var(--utility)", medium:"var(--primary)", hard:"var(--melee)"};
+function difficultyBadgeHtml(name){
+  const level = weaponDifficulty[name] || "medium";
+  const color = DIFFICULTY_DOT_COLOR[level] || DIFFICULTY_DOT_COLOR.medium;
+  const title = level.charAt(0).toUpperCase() + level.slice(1);
+  return `<span class="difficulty-dot" style="background:${color}" title="${title}"></span>`;
+}
 let historyFilters = {room:"", opponent:"", result:"", mvpOnly:false, gameMode:""};
 // Guards the join-screen inline history dashboard (item 4) so it loads once per visit to that
 // screen rather than on every renderJoinRoomBar() call (i.e. every sync tick) — reset to false by
@@ -1398,14 +1440,35 @@ function fullCard(excludedWeapons){ return weaponPool(excludedWeapons); }
 // at entry creation), but tagged with a real playerId rather than HANDICAP_PLAYER_ID, so it counts
 // as a genuinely earned tile for tiles/lines scoring instead of being excluded like a handicap
 // freebie (see teamScoringInputs' isRealMark / canEditTile's HANDICAP_PLAYER_ID checks).
-function applyFreeSquare(card, marks, markedBy, ownerId){
+// Difficulty weighting (item 5): "easier"/"harder" skew the pick toward that end via simple
+// integer weights (5:2:1, reversed for "harder"); "random" (the default, matching
+// rounds.free_square_bias's own default) is a plain uniform 1:1:1 — i.e. today's old behavior.
+const FREE_SQUARE_BIAS_WEIGHTS = {
+  easier: {easy:5, medium:2, hard:1},
+  random: {easy:1, medium:1, hard:1},
+  harder: {easy:1, medium:2, hard:5}
+};
+// Flattens candidates into a weighted array (repeat each name by its bias weight) rather than
+// cumulative-weight math — the pools here are at most ~45 names, so simplicity wins over
+// micro-efficiency. Untagged weapons weight as "medium", matching weaponDifficulty's own default.
+function weightedPick(names, bias){
+  const weights = FREE_SQUARE_BIAS_WEIGHTS[bias] || FREE_SQUARE_BIAS_WEIGHTS.random;
+  const weighted = [];
+  names.forEach(name => {
+    const level = weaponDifficulty[name] || "medium";
+    const w = weights[level] || 1;
+    for(let i = 0; i < w; i++) weighted.push(name);
+  });
+  return weighted[Math.floor(Math.random() * weighted.length)];
+}
+function applyFreeSquare(card, marks, markedBy, ownerId, bias){
   // Picks from whatever's still unmarked (falls back to the full card only if somehow nothing is
   // unmarked) so it can never collide with an already-placed handicap pre-mark and silently
   // "promote" it to a real, scoring-eligible tile by overwriting its markedBy entry.
   const pool = card.filter(name => !marks[name]);
   const from = pool.length ? pool : card;
   if(!from.length) return;
-  const name = from[Math.floor(Math.random() * from.length)];
+  const name = weightedPick(from, bias || "random");
   marks[name] = true;
   markedBy[name] = {playerId:ownerId, at:Date.now()};
 }
@@ -1552,6 +1615,41 @@ async function loadPersonalHistory(){
     .sort((a,b) => (b.round.ended_at || b.round.created_at || 0) - (a.round.ended_at || a.round.created_at || 0));
 }
 function currentRoundEntry(){ return roundEntries.find(entry => entry.player_id === myEntryId()) || null; }
+// Spectator mode (item 2): no new identity concept — a spectator is simply present in the room
+// but with no round_entries row of their own for this round. For a team/TTT round that means
+// myTeamId() found them in neither team's array (myEntryId() falls back to their raw uid, which
+// never matches a "team-A"/"team-B" player_id); for a solo/individual round it means they weren't
+// one of the entries created at round start (syncNow() no longer auto-adds one — see above).
+// Either way "no matching entry" already falls out of currentRoundEntry() with zero new state.
+function isSpectator(){
+  return Boolean(activeRound) && !activeRound.ended_at && !currentRoundEntry();
+}
+// Roster (item 6): everyone present in the room right now, split into each team/side (or
+// "Player 1"/"Player 2" for a non-team 1v1) plus a separate spectating list — anyone present in
+// boards but not accounted for in round.teams (team/TTT) or round_entries (solo/individual).
+function computeRoster(){
+  if(!activeRound) return null;
+  const present = Object.entries(boards); // [id, board][]
+  if(activeRound.teams){
+    const assigned = new Set();
+    const sides = Object.keys(activeRound.teams).map(teamKey => {
+      const members = (activeRound.teams[teamKey] || []).map(pid => {
+        assigned.add(pid);
+        return {id:pid, name:teamMemberName(pid)};
+      });
+      return {label:teamKey === "team-A" ? "Team A" : "Team B", members};
+    });
+    const spectators = present.filter(([id]) => !assigned.has(id)).map(([id, board]) => ({id, name:board.name}));
+    return {sides, spectators};
+  }
+  // Solo/individual: each round_entries row is one real player (never "team-A"/"team-B" here),
+  // labeled "Player 1"/"Player 2" in entry-creation order rather than by name, since the roster's
+  // job is showing WHICH SIDE someone's on, not restating names already shown elsewhere per side.
+  const participantIds = new Set(roundEntries.map(e => e.player_id));
+  const sides = roundEntries.map((entry, i) => ({label:`Player ${i + 1}`, members:[{id:entry.player_id, name:entry.player_name}]}));
+  const spectators = present.filter(([id]) => !participantIds.has(id)).map(([id, board]) => ({id, name:board.name}));
+  return {sides, spectators};
+}
 function roundLines(card, marks, size){
   let lines = 0;
   for(let row = 0; row < size; row++) if(card.slice(row * size, row * size + size).every(name => marks[name])) lines++;
@@ -1703,6 +1801,19 @@ function canViewRoundEntry(entry){
 function tileMaskedFor(entry){
   return !activeRound.ended_at && (activeRound.card_visibility || "hidden") === "finish" && entry.player_id !== myEntryId();
 }
+// Spectator viewing rules (item 4) — deliberately separate from canViewRoundEntry()/
+// tileMaskedFor() above, which answer "can THIS PLAYER see THAT PLAYER's card" and go fully
+// opaque under "hidden" visibility. A spectator's access is governed by
+// rounds.spectators_can_view instead: off means no board at all (handled by isSpectator() callers
+// choosing not to render one), on means every entry is viewable, masked as "finish" (reveal as
+// marked) UNLESS the round's real card_visibility is "visible", in which case spectators get the
+// same full, unmasked view a "visible" round already gives real players.
+function spectatorsCanView(){
+  return Boolean(activeRound) && activeRound.spectators_can_view !== false;
+}
+function tileMaskedForSpectator(){
+  return !activeRound.ended_at && activeRound.card_visibility !== "visible";
+}
 function tilesMarkedCount(entry){
   return Object.values(entry?.marks || {}).filter(Boolean).length;
 }
@@ -1790,22 +1901,11 @@ async function syncNow(){
       if(finished && finished.ended_at) activeRound = finished;
     }
     roundEntries = activeRound ? await Store.listRoundEntries(activeRound.id) : [];
-    // Team rounds (item 2) always pre-create both team entries at round start — never auto-add a
-    // per-player entry for one, or every teammate's next sync would spawn a stray solo entry.
-    if(activeRound && !activeRound.ended_at && !activeRound.teams && !roundEntries.some(entry => entry.player_id === me.id)){
-      // Reads excluded_weapons/max_hard_weapons off the persisted round (step 2), not
-      // cardFilterConfig — a late joiner's own individual card must draw from the exact same pool
-      // the round was actually created with, not whatever's currently sitting in the config panel.
-      const card = activeRound.layout === "all"
-        ? fullCard(activeRound.excluded_weapons)
-        : makeRoundCard(Number(activeRound.grid_size), activeRound.card_mode === "shared" ? activeRound.shared_card : null, activeRound.excluded_weapons, activeRound.max_hard_weapons);
-      const marks = {}, markedBy = {};
-      if(activeRound.free_square) applyFreeSquare(card, marks, markedBy, me.id);
-      const {tiles, lines} = teamScoringInputs(activeRound, card, marks, markedBy);
-      const points = computeRoundPoints(activeRound, me.id, tiles, lines, false);
-      await Store.addRoundEntry({round_id:activeRound.id, player_id:me.id, player_name:me.name, card, marks, marked_by:markedBy, blocked_attempts:{}, lines_completed:lines, points, finished_at:null, version:0});
-      roundEntries = await Store.listRoundEntries(activeRound.id);
-    }
+    // Spectator mode (item 1): a room member who wasn't part of the round at creation no longer
+    // gets a brand-new competing round_entries row auto-added here — they become a spectator
+    // instead (see isSpectator()/currentRoundEntry() returning null for them). Team-mode entries
+    // were never auto-added this way to begin with (always pre-created both at round start), so
+    // this only ever affected solo/individual-mode rounds.
     // Blocked-unmark notifications (item 5): tell the tile's actual marker when someone else tried
     // to undo it. Gated behind hadRosterBaseline so a fresh join/reload doesn't replay old attempts
     // as if they just happened — same convention as the join/leave and round toasts above. The
@@ -2052,12 +2152,26 @@ function buildTileSizes(){
 // whole page while keeping flex/grid layout intact. Distinct from tileSize, which changes grid
 // density rather than overall page scale.
 function applyPageZoom(){
-  document.querySelector(".wrap").style.zoom = (Number(me?.pageZoom) || 80) / 100;
+  document.querySelector(".wrap").style.zoom = (Number(me?.pageZoom) || 100) / 100;
 }
 function renderZoomControl(){
-  const zoom = Number(me?.pageZoom) || 80;
+  const zoom = Number(me?.pageZoom) || 100;
   document.getElementById("zoomSlider").value = zoom;
-  document.getElementById("zoomValue").textContent = zoom + "%";
+  document.getElementById("zoomValue").value = zoom;
+}
+// Shared by all three zoom controls (item 2: drag, stepper, typed number) — instant visual
+// preview only, clamped to the slider's own 80-150 range so a stepper press or a typed
+// out-of-range number can never push the page past what the slider itself allows.
+function setZoomPreview(value){
+  me.pageZoom = Math.max(80, Math.min(150, Math.round(Number(value) || 100)));
+  applyPageZoom();
+  renderZoomControl();
+}
+// The actual network write, split out from the preview above (item 2/3) — every control calls
+// this only once it's done changing the value (drag release, a stepper click, or leaving the
+// number field), never on every intermediate value.
+async function saveZoom(){
+  try{ await Store.saveProfile(me.id, {page_zoom:me.pageZoom}); }catch(e){ console.error("zoom save failed", e); }
 }
 
 function renderMuteButton(){
@@ -2340,11 +2454,14 @@ function renderGridBingoControls(){
   if(!inRoom || hasRound) document.getElementById("gridBingoConfig").dataset.open = "false";
 }
 
-// Exclude Weapons (step 2, item 1): same .category/.cat-head grouping as Weapon Difficulty and
-// renderCategorySections, but each row is a single checkbox toggle, not a 3-way picker — a
-// weapon is either excluded from this round's card generation or it isn't. Reads/writes straight
-// into cardFilterConfig.excludedWeapons, an array (not a Set) since it's persisted to
-// rounds.excluded_weapons verbatim at round start.
+// Exclude Weapons (step 2 item 1, redesigned item 6): same .category/.cat-head grouping as
+// Weapon Difficulty and renderCategorySections, but each weapon is a toggle chip reusing
+// .bingo-options button/.on styling (item 6), laid out via the CSS-grid override on
+// "#excludeWeaponsBox .bingo-options" above — not native checkboxes. Reads/writes straight into
+// cardFilterConfig.excludedWeapons, an array (not just a Set) since it's persisted to
+// rounds.excluded_weapons verbatim at round start; `excluded` is the live, mutable working Set
+// for this render pass — updated on every click so a second click on the same chip correctly
+// toggles back off instead of re-deriving from an unchanged initial snapshot.
 function buildExcludeWeaponsBox(){
   const container = document.getElementById("excludeWeaponsBox");
   container.innerHTML = "";
@@ -2357,23 +2474,22 @@ function buildExcludeWeaponsBox(){
     head.className = "cat-head cat-" + cat.toLowerCase();
     head.innerHTML = `<h2>${cat}</h2><div class="cat-bar"></div>`;
     section.appendChild(head);
+    const grid = document.createElement("div");
+    grid.className = "bingo-options";
     items.forEach(i => {
-      const row = document.createElement("label");
-      row.className = "exclude-row";
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = excluded.has(i.name);
-      checkbox.addEventListener("change", () => {
-        cardFilterConfig.excludedWeapons = checkbox.checked
-          ? [...cardFilterConfig.excludedWeapons, i.name]
-          : cardFilterConfig.excludedWeapons.filter(n => n !== i.name);
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.textContent = i.name;
+      chip.title = i.name;
+      chip.className = excluded.has(i.name) ? "on" : "";
+      chip.addEventListener("click", () => {
+        if(excluded.has(i.name)) excluded.delete(i.name); else excluded.add(i.name);
+        cardFilterConfig.excludedWeapons = Array.from(excluded);
+        chip.className = excluded.has(i.name) ? "on" : "";
       });
-      const span = document.createElement("span");
-      span.textContent = i.name;
-      row.appendChild(checkbox);
-      row.appendChild(span);
-      section.appendChild(row);
+      grid.appendChild(chip);
     });
+    section.appendChild(grid);
     container.appendChild(section);
   });
 }
@@ -2481,7 +2597,16 @@ function buildStartRoundConfig(){
   // like the rest of this panel, reading straight from cardFilterConfig.excludedWeapons so a mode
   // switch never loses the selection.
   buildExcludeWeaponsBox();
+  document.getElementById("spectatorsCanViewCheckbox").checked = Boolean(cardFilterConfig.spectatorsCanView);
   document.getElementById("freeSquareCheckbox").checked = Boolean(cardFilterConfig.freeSquare);
+  // Bias picker (item 5) only matters, and is only shown, once Free Square is actually on.
+  document.getElementById("freeSquareBiasRow").style.display = cardFilterConfig.freeSquare ? "" : "none";
+  if(cardFilterConfig.freeSquare){
+    buildBingoOptions("freeSquareBiasOptions", [{label:"Prefer Easier",value:"easier"},{label:"Purely Random",value:"random"},{label:"Prefer Harder",value:"harder"}], cardFilterConfig.freeSquareBias, value => {
+      cardFilterConfig.freeSquareBias = value;
+      buildStartRoundConfig();
+    });
+  }
 
   // Grid size: shown for Grid and Tic-Tac-Toe, not All (only one possible layout there).
   document.getElementById("gridSizeRow").style.display = isAll ? "none" : "";
@@ -2571,7 +2696,10 @@ async function startTicTacToe(){
   // individual-card mode gives each player their own free square on their own card.
   const claims = {};
   if(cardFilterConfig.freeSquare && sharedCard.length >= 2){
-    const [freeA, freeB] = shuffle(sharedCard).slice(0, 2);
+    // weightedPick twice rather than one shuffle().slice(0,2) (item 5): the two picks must stay
+    // distinct, so the second draw excludes whatever the first one already took.
+    const freeA = weightedPick(sharedCard, cardFilterConfig.freeSquareBias);
+    const freeB = weightedPick(sharedCard.filter(n => n !== freeA), cardFilterConfig.freeSquareBias);
     claims[freeA] = {side:"team-A", playerId:(teams["team-A"] || [])[0] || null, at:Date.now()};
     claims[freeB] = {side:"team-B", playerId:(teams["team-B"] || [])[0] || null, at:Date.now()};
   }
@@ -2592,6 +2720,8 @@ async function startTicTacToe(){
     excluded_weapons:cardFilterConfig.excludedWeapons,
     max_hard_weapons:cardFilterConfig.maxHardWeapons,
     free_square:Boolean(cardFilterConfig.freeSquare),
+    free_square_bias:cardFilterConfig.freeSquareBias,
+    spectators_can_view:Boolean(cardFilterConfig.spectatorsCanView),
     winner_id:null,
     ended_at:null,
     started_by:me.name,
@@ -2668,7 +2798,9 @@ async function startTeamGridBingo(roundId, members){
     underdog_bonus:gridBingoConfig.underdogBonus || "none",
     excluded_weapons:cardFilterConfig.excludedWeapons,
     max_hard_weapons:isAll ? null : cardFilterConfig.maxHardWeapons,
-    free_square:Boolean(cardFilterConfig.freeSquare)
+    free_square:Boolean(cardFilterConfig.freeSquare),
+    free_square_bias:cardFilterConfig.freeSquareBias,
+    spectators_can_view:Boolean(cardFilterConfig.spectatorsCanView)
   };
   const sizeA = teams["team-A"].length, sizeB = teams["team-B"].length;
   const playerGap = Math.abs(sizeA - sizeB);
@@ -2693,7 +2825,7 @@ async function startTeamGridBingo(roundId, members){
     // Free square (step 2, item 3): a real earned tile, not a handicap freebie — tagged with an
     // actual member's id (the team's first present player) rather than HANDICAP_PLAYER_ID, so it
     // counts in tiles/lines/points and isn't permanently locked the way a handicap tile is.
-    if(round.free_square) applyFreeSquare(card, marks, markedBy, (teams[teamKey] || [])[0] || teamKey);
+    if(round.free_square) applyFreeSquare(card, marks, markedBy, (teams[teamKey] || [])[0] || teamKey, round.free_square_bias);
     const {tiles, lines} = teamScoringInputs(round, card, marks, markedBy);
     const points = computeRoundPoints(round, teamKey, tiles, lines, false); // never "full" at creation
     return {round_id:roundId, player_id:teamKey, player_name:teamKey === "team-A" ? "Team A" : "Team B", card, marks, marked_by:markedBy, blocked_attempts:{}, lines_completed:lines, points, finished_at:null, version:0};
@@ -2731,12 +2863,14 @@ async function startGridBingo(){
     ended_by:null,
     excluded_weapons:cardFilterConfig.excludedWeapons,
     max_hard_weapons:isAll ? null : cardFilterConfig.maxHardWeapons,
-    free_square:Boolean(cardFilterConfig.freeSquare)
+    free_square:Boolean(cardFilterConfig.freeSquare),
+    free_square_bias:cardFilterConfig.freeSquareBias,
+    spectators_can_view:Boolean(cardFilterConfig.spectatorsCanView)
   };
   const entries = members.map(([id,board]) => {
     const card = sharedCard ? sharedCard.slice() : (isAll ? fullCard(cardFilterConfig.excludedWeapons) : makeRoundCard(round.grid_size, null, cardFilterConfig.excludedWeapons, cardFilterConfig.maxHardWeapons));
     const marks = {}, markedBy = {};
-    if(round.free_square) applyFreeSquare(card, marks, markedBy, id);
+    if(round.free_square) applyFreeSquare(card, marks, markedBy, id, round.free_square_bias);
     const {tiles, lines} = teamScoringInputs(round, card, marks, markedBy);
     const points = computeRoundPoints(round, id, tiles, lines, false); // never "full" at creation
     return makeRoundEntry(id, board.name, card, roundId, marks, markedBy, lines, points);
@@ -2748,6 +2882,10 @@ async function startGridBingo(){
 
 async function endGridBingo(){
   if(!activeRound) return;
+  // Spectator permissions (item 3): choke point at the action itself, same pattern as
+  // attemptToggleRoundCard()/attemptClaimSquare() — never baked into the button's own
+  // visibility/disabled state.
+  if(isSpectator()){ showToast("Spectators can't end the round."); return; }
   // Manually ending a round before its natural completion condition is a DNF: excluded from the
   // room leaderboard's points sum, but still listed (as "ended early") in round history.
   // A failed write here must not silently swallow the sync/render below — that's what made this
@@ -3125,15 +3263,40 @@ function buildWeaponDifficultyRowOptions(name, selected){
   });
 }
 
+// Spectating with viewing off (item 4/5): no board, no leaderboard, just a status message. Shared
+// by both renderRoundBoard() and renderTicTacToeRound() — this "nothing to show" state looks
+// identical regardless of game mode.
+function renderSpectatingBlocked(){
+  document.getElementById("viewingBanner").classList.remove("show");
+  document.getElementById("resetBtn").style.display = "none";
+  document.getElementById("progressTrack").style.display = "none";
+  document.getElementById("scoreNum").textContent = "—";
+  document.getElementById("scoreLbl").textContent = "Spectating";
+  document.getElementById("bingoLeaderboard").classList.remove("show");
+  document.getElementById("bingoLeaderboard").innerHTML = "";
+  const status = document.getElementById("gridBingoStatus");
+  status.classList.add("show");
+  status.innerHTML = `<div class="settings-line">${escapeHtml(roundSettingsLine(activeRound))}</div><div>Spectating — round in progress</div>`;
+  document.getElementById("board").replaceChildren();
+}
 function renderRoundBoard(){
   const own = currentRoundEntry();
-  if(!own) return;
+  const spectating = isSpectator();
+  if(spectating && !spectatorsCanView()){ renderSpectatingBlocked(); return; }
   const pointsMode = activeRound.scoring_mode === "points";
   const isAll = activeRound.layout === "all";
   const size = Number(activeRound.grid_size);
+  // A spectator has no "own" board to default to — falls back to the first entry instead. If
+  // there's truly nothing yet (round just created, entries still syncing), there's nothing to show.
+  const fallbackEntry = own || roundEntries[0];
+  if(!fallbackEntry) return;
   const viewed = (roundViewingId && roundViewingId !== myEntryId()) ? roundEntries.find(e => e.player_id === roundViewingId) : null;
-  const entry = (viewed && canViewRoundEntry(viewed)) ? viewed : own;
-  const editable = entry.player_id === myEntryId() && !activeRound.ended_at && !entry.finished_at;
+  // Item 4: a spectator's ability to open ANY entry is governed by spectators_can_view alone
+  // (already confirmed true here, or we'd have returned above), not canViewRoundEntry()'s
+  // per-player hidden/visible/finish rules — those still apply unchanged for real participants.
+  const canView = item => spectating ? true : canViewRoundEntry(item);
+  const entry = (viewed && canView(viewed)) ? viewed : fallbackEntry;
+  const editable = !spectating && entry.player_id === myEntryId() && !activeRound.ended_at && !entry.finished_at;
   document.getElementById("viewingBanner").classList.toggle("show", entry.player_id !== myEntryId());
   document.getElementById("viewingName").textContent = entry.player_name;
   document.getElementById("resetBtn").style.display = "none";
@@ -3141,9 +3304,10 @@ function renderRoundBoard(){
   // While the round is active (not yet ended) the header shows round progress; once it ends, the
   // round grid/leaderboard stay visible but there's nothing actively being tracked at that moment
   // (the old fallback here referenced the default 43-weapon tracker, which no longer exists in a room).
-  if(activeRound.ended_at){
+  // Spectators (item 6) have no "own" progress to show either, so they get the same idle dash.
+  if(activeRound.ended_at || spectating){
     document.getElementById("scoreNum").textContent = "—";
-    document.getElementById("scoreLbl").textContent = "Idle";
+    document.getElementById("scoreLbl").textContent = spectating ? "Spectating" : "Idle";
     document.getElementById("progressFill").style.width = "0%";
   } else {
     const ownDone = tilesMarkedCount(own);
@@ -3169,13 +3333,13 @@ function renderRoundBoard(){
     ranks.set(item.player_id, rank);
   });
   sorted.forEach(item => {
-    const viewable = canViewRoundEntry(item);
+    const viewable = canView(item);
     const locked = item.player_id !== myEntryId() && !viewable;
     const card = document.createElement("div");
     card.className = "player" + (activeRound.winner_id === item.player_id ? " winner" : "") + (entry.player_id === item.player_id ? " viewing" : "") + (locked ? " locked" : "");
     const r = ranks.get(item.player_id);
     const badge = r <= 3 ? medalBadge(r) : "";
-    const showIcon = scoped ? item.player_id !== myEntryId() : true;
+    const showIcon = spectating ? true : (scoped ? item.player_id !== myEntryId() : true);
     const visIcon = showIcon ? `<span class="vis-icon${viewable ? " open" : ""}" title="${viewable ? "You can view this card" : "Hidden from you"}">${viewable ? EYE_OPEN : EYE_CLOSED}</span>` : "";
     const tiles = tilesMarkedCount(item);
     const progressText = isAll ? `${tiles} tiles` : `${item.lines_completed || 0} lines · ${tiles} tiles`;
@@ -3194,7 +3358,7 @@ function renderRoundBoard(){
     const inner = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}${badge}${visIcon}</span></div>${membersLine}<div class="bingo-score">${score}</div>${mvpLine}`;
     if(viewable){
       card.innerHTML = `<button type="button" class="open">${inner}</button>`;
-      card.querySelector(".open").addEventListener("click", () => { roundViewingId = item.player_id === myEntryId() ? null : item.player_id; renderAll(); });
+      card.querySelector(".open").addEventListener("click", () => { roundViewingId = (!spectating && item.player_id === myEntryId()) ? null : item.player_id; renderAll(); });
     } else {
       card.innerHTML = inner;
     }
@@ -3216,7 +3380,7 @@ function renderRoundBoard(){
   }
   status.innerHTML = `<div class="settings-line">${escapeHtml(settingsLine)}</div><div>${resultLine}</div>`;
 
-  const masked = tileMaskedFor(entry);
+  const masked = spectating ? tileMaskedForSpectator() : tileMaskedFor(entry);
   if(isAll){
     const container = document.createElement("div");
     renderCategorySections(container, entry.marks || {}, editable, attemptToggleRoundCard, masked, editable, entry.marked_by || {});
@@ -3234,6 +3398,10 @@ function renderRoundBoard(){
 // shared board for everyone (no per-player "viewing someone else's card" concept, no masking/
 // visibility), so there's no viewingBanner/roundViewingId handling here at all.
 function renderTicTacToeRound(){
+  // item 5: TTT's board is always fully visible by design — spectators_can_view only ever gates
+  // whether spectators see it AT ALL, never any masking (there's no per-player visibility concept
+  // here to begin with, unlike Grid Bingo's card_visibility).
+  if(isSpectator() && !spectatorsCanView()){ renderSpectatingBlocked(); return; }
   const size = Number(activeRound.grid_size);
   const mySide = myTeamId();
   document.getElementById("viewingBanner").classList.remove("show");
@@ -3373,8 +3541,11 @@ function makeTile(item, board, editable, onToggle, masked){
     tile.innerHTML = `<span class="stamp" style="display:flex;">${UNKNOWN_TILE}</span>`;
   } else {
     tile.className = "tile" + (done ? " done" : "");
+    // Difficulty badge (item 4) only on a visible tile, never a masked one — showing it while the
+    // weapon name itself is hidden would leak which weapon is underneath via its difficulty tag.
     tile.innerHTML = `<img class="weapon-image" src="weapons/${slug(item.name)}.png" alt="" draggable="false">` +
       `<span class="stamp">${HITMARKER}</span><span class="name">${escapeHtml(item.name)}</span>` +
+      difficultyBadgeHtml(item.name) +
       (isHandicap ? `<span class="handicap-badge" title="Starting handicap — can't be marked or unmarked">${HANDICAP_ICON}</span>` : "");
     const image = tile.querySelector(".weapon-image");
     image.onerror = function(){
@@ -3409,7 +3580,8 @@ function makeClaimSquare(name, claim, editable, onClaim){
   square.innerHTML = `<img class="weapon-image" src="weapons/${slug(name)}.png" alt="" draggable="false">` +
     (side ? `<span class="stamp" style="display:flex;">${HITMARKER}</span>` : "") +
     (claimerName ? `<span class="claimer-name">${escapeHtml(claimerName)}</span>` : "") +
-    `<span class="name">${escapeHtml(name)}</span>`;
+    `<span class="name">${escapeHtml(name)}</span>` +
+    difficultyBadgeHtml(name);
   const image = square.querySelector(".weapon-image");
   image.onerror = function(){
     this.insertAdjacentHTML("afterend", BLANK);
@@ -3419,11 +3591,25 @@ function makeClaimSquare(name, claim, editable, onClaim){
   return square;
 }
 
+// Live-round roster (item 6) — called from renderBoard() regardless of game mode, since who's on
+// which side/spectating is the same question for Grid Bingo, All, and Tic-Tac-Toe alike.
+function renderRoundRoster(){
+  const box = document.getElementById("roundRoster");
+  const live = Boolean(activeRound) && !activeRound.ended_at;
+  box.classList.toggle("show", live);
+  if(!live) return;
+  const roster = computeRoster();
+  const groupHtml = (label, names) => `<div class="roster-group"><div class="roster-group-label">${escapeHtml(label)}</div><div class="roster-names">${names.length ? names.map(escapeHtml).join(", ") : "—"}</div></div>`;
+  const parts = roster.sides.map(side => groupHtml(side.label, side.members.map(m => m.name)));
+  if(roster.spectators.length) parts.push(groupHtml("Spectating", roster.spectators.map(s => s.name)));
+  box.innerHTML = parts.join("");
+}
 // No Free Play (item 8) — either a round is live (renderRoundBoard), or this player is idle in a
 // room (or not in one yet), in which case there's nothing to track: no default 43-weapon tracker,
 // no per-player board to click into.
 function renderBoard(){
   document.getElementById("progressTrack").style.display = "";
+  renderRoundRoster();
   if(activeRound){
     if(activeRound.game_type === "tictactoe") renderTicTacToeRound();
     else renderRoundBoard();
@@ -3519,6 +3705,11 @@ document.getElementById("startGridBingoBtn").addEventListener("click", () => {
   renderGridBingoControls();
 });
 document.getElementById("newGridBingoBtn").addEventListener("click", async () => {
+  // Spectator permissions (item 3): only matters while a round is still LIVE (isSpectator()
+  // requires !ended_at) — once it's ended, this same button is the legitimate "start the next
+  // round" action for everyone, spectator or not, matching item 3's "no lingering spectator
+  // state" once a round ends.
+  if(isSpectator()){ showToast("Spectators can't start a new round."); return; }
   // Reopens on the same Game Mode the round that just ended actually was (item 1) — not always
   // "grid", now that the one panel covers all three modes.
   const endedRound = activeRound;
@@ -3566,6 +3757,10 @@ document.getElementById("tttDrawOnFullCheckbox").addEventListener("change", e =>
 });
 document.getElementById("freeSquareCheckbox").addEventListener("change", e => {
   cardFilterConfig.freeSquare = e.target.checked;
+  buildStartRoundConfig(); // shows/hides the bias row (item 5) immediately, not on the next unrelated change
+});
+document.getElementById("spectatorsCanViewCheckbox").addEventListener("change", e => {
+  cardFilterConfig.spectatorsCanView = e.target.checked;
 });
 document.getElementById("muteBtn").addEventListener("click", async () => {
   me.muted = !me.muted;
@@ -3578,22 +3773,67 @@ document.getElementById("muteBtn").addEventListener("click", async () => {
 // touchend/keyup), not on every intermediate value during the drag itself. A mouse/trackpad drag
 // can fire dozens of "input" events; saving on each one was the source of the perceptible lag.
 document.getElementById("zoomSlider").addEventListener("input", e => {
-  me.pageZoom = Number(e.target.value);
-  applyPageZoom();
-  renderZoomControl();
+  setZoomPreview(e.target.value);
 });
-document.getElementById("zoomSlider").addEventListener("change", async e => {
-  me.pageZoom = Number(e.target.value);
-  try{ await Store.saveProfile(me.id, {page_zoom:me.pageZoom}); }catch(e){ console.error("zoom save failed", e); }
+document.getElementById("zoomSlider").addEventListener("change", e => {
+  setZoomPreview(e.target.value);
+  saveZoom();
+});
+// Stepper pair (item 2): ±2% per press, same clamp/instant-preview as the slider — a click is
+// already a single discrete change, so it saves right away rather than waiting on a separate
+// "done" event the way a continuous drag needs to.
+document.getElementById("zoomStepDown").addEventListener("click", () => {
+  setZoomPreview((Number(me.pageZoom) || 100) - 2);
+  saveZoom();
+});
+document.getElementById("zoomStepUp").addEventListener("click", () => {
+  setZoomPreview((Number(me.pageZoom) || 100) + 2);
+  saveZoom();
+});
+// Typed number (item 2): applies on blur/Enter only, not per keystroke — an in-progress typed
+// value ("1", "12") would otherwise preview as a nonsensical zoom level. Enter just blurs the
+// field so there's a single apply path instead of duplicating it for both events.
+document.getElementById("zoomValue").addEventListener("blur", e => {
+  setZoomPreview(e.target.value);
+  saveZoom();
+});
+document.getElementById("zoomValue").addEventListener("keydown", e => {
+  if(e.key === "Enter") e.target.blur();
 });
 document.getElementById("copyRoomLink").addEventListener("click", async e => {
   const url = new URL(location.href);
   url.searchParams.set("room", currentRoomCode());
+  const btn = e.currentTarget;
+  const flashCopied = () => {
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = "Copy invite link"; }, 1500);
+  };
+  // The swap-text confirmation already existed (item 1), but with nothing behind it when the
+  // async Clipboard API throws (non-secure context, permission denied, older browser) — the
+  // button just silently did nothing. Falls back to the legacy textarea+execCommand path, which
+  // still works almost everywhere, and only gives up with a toast if that fails too, so there's
+  // always some visible feedback either way.
   try{
+    if(!navigator.clipboard || !navigator.clipboard.writeText) throw new Error("clipboard API unavailable");
     await navigator.clipboard.writeText(url.toString());
-    e.currentTarget.textContent = "Copied!";
-    setTimeout(() => { e.currentTarget.textContent = "Copy invite link"; }, 1500);
-  }catch(err){ console.error("copy failed", err); }
+    flashCopied();
+  }catch(err){
+    console.error("copy failed", err);
+    try{
+      const ta = document.createElement("textarea");
+      ta.value = url.toString();
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      flashCopied();
+    }catch(fallbackErr){
+      console.error("fallback copy failed", fallbackErr);
+      showToast("Couldn't copy the link — copy it manually from the address bar.");
+    }
+  }
 });
 document.getElementById("backToMine").addEventListener("click", () => { roundViewingId = null; renderAll(); });
 document.getElementById("inlineRoomInput").addEventListener("input", e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""); });
@@ -3714,7 +3954,7 @@ async function submitAuth(){
       const {data, error} = await sbClient.auth.signInAnonymously();
       if(error){ setJoinError("Couldn't continue as guest — try again."); return; }
       try{
-        await Store.createProfile({id:data.user.id, username:null, display_name:displayName, accent:"cyan", tile_size:"medium", muted:false, page_zoom:80, is_anonymous:true, created_at:Date.now()});
+        await Store.createProfile({id:data.user.id, username:null, display_name:displayName, accent:"cyan", tile_size:"medium", muted:false, page_zoom:100, is_anonymous:true, created_at:Date.now()});
       }catch(e){
         setJoinError("Guest setup failed — try again.");
         return;
@@ -3755,7 +3995,7 @@ async function submitAuth(){
         newSession = signInResult.data.session;
       }
       try{
-        await Store.createProfile({id:uid, username, display_name:displayName, accent:"cyan", tile_size:"medium", muted:false, page_zoom:80, created_at:Date.now()});
+        await Store.createProfile({id:uid, username, display_name:displayName, accent:"cyan", tile_size:"medium", muted:false, page_zoom:100, created_at:Date.now()});
       }catch(e){
         setJoinError("Signup succeeded, but profile setup failed — try logging in.");
         return;
@@ -4018,7 +4258,7 @@ async function onLoggedIn(newSession){
     accent:profile?.accent || "cyan",
     tileSize:profile?.tile_size || "medium",
     muted:Boolean(profile?.muted),
-    pageZoom:Number(profile?.page_zoom) || 80,
+    pageZoom:Number(profile?.page_zoom) || 100,
     isAnonymous:Boolean(profile?.is_anonymous),
     roomCode:null
   };
