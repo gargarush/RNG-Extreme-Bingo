@@ -52,7 +52,7 @@
   .zoom-bar .zoom-step{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:6px;width:22px;height:22px;line-height:1;font-size:14px;padding:0;cursor:pointer;font-family:inherit;}
   .zoom-bar .zoom-step:hover{border-color:var(--mark);color:var(--ink);}
   .zoom-bar .zoom-value-wrap{display:flex;align-items:center;gap:2px;font-variant-numeric:tabular-nums;}
-  .zoom-bar input[type=number]{width:40px;background:#14101f;border:1px solid var(--panel-line);color:var(--ink);border-radius:6px;padding:2px 4px;font-size:12.5px;font-family:inherit;text-align:right;}
+  .zoom-bar input[type=number]{width:52px;background:#14101f;border:1px solid var(--panel-line);color:var(--ink);border-radius:6px;padding:3px 5px;font-size:13.5px;font-family:inherit;text-align:right;}
   .zoom-bar input[type=number]:focus{outline:2px solid var(--mark);outline-offset:1px;}
 
   .progress-track{height:8px;background:var(--panel);border:1px solid var(--panel-line);border-radius:5px;overflow:hidden;}
@@ -189,6 +189,10 @@
   .exclude-weapons-box .cat-head h2{font-size:11px;}
   #excludeWeaponsBox .bingo-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:4px;}
   #excludeWeaponsBox .bingo-options button{width:100%;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  /* Excluded (item 8) gets a distinct melee-red tint rather than the generic .on background, so
+     it's obvious at a glance which weapons are currently excluded — qualified with the id prefix
+     to safely outrank the plain ".bingo-options button.on" rule it's overriding. */
+  #excludeWeaponsBox .bingo-options button.on{background:rgba(255,77,106,.22);border-color:var(--melee);color:var(--ink);}
   .bingo-config-actions{display:flex;justify-content:flex-end;gap:8px;}
   .bingo-config-actions button{background:transparent;border:1px solid var(--panel-line);color:var(--dim);border-radius:8px;padding:8px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;}
   .bingo-config-actions button:hover{border-color:var(--mark);color:var(--ink);}
@@ -201,6 +205,10 @@
   .hint-text{display:none;margin-top:-4px;font-size:12px;color:var(--dim);text-align:right;}
   .hint-text.show{display:block;}
   .toggle-row{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--dim);cursor:pointer;}
+  /* Two-line toggle label (item 5's "Allow Ties" + sub-explanation) — every other .toggle-row
+     usage is a bare <span>, unaffected since flex-direction/gap only apply within this wrapper. */
+  .toggle-row .toggle-text{display:flex;flex-direction:column;gap:2px;}
+  .toggle-row .toggle-sub{font-size:10.5px;font-weight:400;color:var(--dim);opacity:.8;}
   .toggle-switch{position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;}
   .toggle-switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;}
   .toggle-track{position:absolute;inset:0;background:var(--panel-line);border-radius:999px;transition:background .15s ease;}
@@ -217,6 +225,12 @@
   .grid-bingo-status.show{display:block;}
   .grid-bingo-status strong{color:var(--ink);}
   .grid-bingo-status .settings-line{font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--dim);margin-bottom:4px;}
+  /* Spectator status line (item 3) — replaces the old viewingBanner for spectators. */
+  .grid-bingo-status .spectator-line{margin-top:4px;color:var(--secondary);font-weight:600;}
+  /* Side-by-side spectator boards (item 2). */
+  .spectator-boards{display:flex;gap:20px;flex-wrap:wrap;}
+  .spectator-board-col{flex:1 1 320px;min-width:260px;}
+  .spectator-board-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:8px;}
   /* Live-round roster (item 6). */
   .round-roster{display:none;flex-wrap:wrap;gap:18px;margin:-4px 0 14px;font-size:12.5px;}
   .round-roster.show{display:flex;}
@@ -614,13 +628,9 @@
       <div class="exclude-weapons-box" id="excludeWeaponsBox"></div>
     </div>
     <!-- Applies to every Game Mode alike (spectator mode item 4/5), default on. -->
-    <div class="bingo-config-row" id="spectatorsCanViewRow">
-      <label>Spectators</label>
-      <label class="toggle-row">
-        <span class="toggle-switch"><input type="checkbox" id="spectatorsCanViewCheckbox"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
-        <span>Spectators can view boards</span>
-      </label>
-    </div>
+    <!-- Replaces the old on/off checkbox (item 1) — spectators always see a board now, this just
+         picks how much of it. -->
+    <div class="bingo-config-row" id="spectatorVisibilityRow"><label>Spectators</label><div class="bingo-options" id="spectatorVisibilityOptions"></div></div>
     <div class="bingo-config-row" id="gridSizeRow"><label>Grid size</label><div class="bingo-options" id="gridSizeOptions"></div></div>
     <div class="bingo-config-row" id="cardModeRow"><label>Card mode</label><div class="bingo-options" id="cardModeOptions"></div></div>
     <div class="bingo-config-row" id="cardVisibilityRow"><label>Card visibility</label><div class="bingo-options" id="cardVisibilityOptions"></div></div>
@@ -643,10 +653,11 @@
       </label>
     </div>
     <div class="bingo-config-row" id="drawOnFullRow">
-      <label>Full grid</label>
+      <label>Allow Ties</label>
       <label class="toggle-row">
         <span class="toggle-switch"><input type="checkbox" id="tttDrawOnFullCheckbox"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
-        <span>End as a draw if the grid fills with no line</span>
+        <!-- item 5: display text only — draw_on_full field/logic unchanged. -->
+        <span class="toggle-text">Allow Ties<span class="toggle-sub">If the whole grid fills with no line, the round ends in a draw.</span></span>
       </label>
     </div>
     <!-- Shown only when weapon_difficulty has at least one "hard" tag (item 2) and hidden for
@@ -1319,7 +1330,7 @@ let tttConfig = {gridSize:3,teamFormation:"random",manualTeams:{},takeBacks:fals
 // Step 2 of the difficulty system: shared by every Game Mode (unlike gridBingoConfig/tttConfig,
 // which are per-mode), since exclusion/hard-cap/free-square all apply identically across Grid,
 // All, and Tic-Tac-Toe per the ticket.
-let cardFilterConfig = {excludedWeapons:[], maxHardWeapons:null, freeSquare:false, freeSquareBias:"random", spectatorsCanView:true};
+let cardFilterConfig = {excludedWeapons:[], maxHardWeapons:null, freeSquare:false, freeSquareBias:"random", spectatorVisibility:"progress"};
 let rosterBaseline = null;
 let roomIsPublic = false;
 let publicRoomsList = [];
@@ -1363,6 +1374,10 @@ let blockedAttemptsSeen = new Map();
 // first sync into that round rather than diffed against nothing — same convention as
 // blockedAttemptsSeen above, just keyed by round id instead of "<entry>:<weapon>".
 let ticTacToeClaimsSeen = new Map();
+// Teammate mark/unmark toast (item 4): last-seen marked_by snapshot of MY team's own round_entries
+// row, per round id — same seed-then-diff convention as ticTacToeClaimsSeen/blockedAttemptsSeen
+// above, so a fresh join never replays earlier changes as new.
+let teamMarkSeen = new Map();
 
 /* ============================ helpers ============================ */
 function escapeHtml(s){
@@ -1801,18 +1816,17 @@ function canViewRoundEntry(entry){
 function tileMaskedFor(entry){
   return !activeRound.ended_at && (activeRound.card_visibility || "hidden") === "finish" && entry.player_id !== myEntryId();
 }
-// Spectator viewing rules (item 4) — deliberately separate from canViewRoundEntry()/
-// tileMaskedFor() above, which answer "can THIS PLAYER see THAT PLAYER's card" and go fully
-// opaque under "hidden" visibility. A spectator's access is governed by
-// rounds.spectators_can_view instead: off means no board at all (handled by isSpectator() callers
-// choosing not to render one), on means every entry is viewable, masked as "finish" (reveal as
-// marked) UNLESS the round's real card_visibility is "visible", in which case spectators get the
-// same full, unmasked view a "visible" round already gives real players.
-function spectatorsCanView(){
-  return Boolean(activeRound) && activeRound.spectators_can_view !== false;
-}
+// Spectator viewing rules — deliberately separate from canViewRoundEntry()/tileMaskedFor() above,
+// which answer "can THIS PLAYER see THAT PLAYER's card" and are driven by the round's own
+// card_visibility. A spectator always sees a board now (no more on/off toggle) — masking is
+// governed purely by rounds.spectator_visibility, completely independent of card_visibility:
+// "progress" always masks as reveal-as-marked, "full" never masks, regardless of what the round's
+// own participants' visibility setting is.
 function tileMaskedForSpectator(){
-  return !activeRound.ended_at && activeRound.card_visibility !== "visible";
+  return !activeRound.ended_at && activeRound.spectator_visibility !== "full";
+}
+function spectatorVisibilityLabel(){
+  return activeRound.spectator_visibility === "full" ? "Fully Visible" : "Progress Only";
 }
 function tilesMarkedCount(entry){
   return Object.values(entry?.marks || {}).filter(Boolean).length;
@@ -1865,6 +1879,13 @@ async function loadPublicRoomsList(){
 
 async function syncNow(){
   try{
+    // Live refresh (item 7): previously only loaded at login and when the Weapon Difficulty modal
+    // itself opened, so a tag someone else changed mid-round wouldn't reach your difficulty dots
+    // until a full reload. Small table, cheap to refetch every poll tick alongside everything else.
+    try{
+      const rows = await Store.listWeaponDifficulty();
+      weaponDifficulty = Object.fromEntries(rows.map(r => [r.weapon_name, r.difficulty]));
+    }catch(e){ console.error("weapon difficulty refresh failed", e); }
     const remote = await Store.listBoards(currentRoomCode());
     const boardId = me.id;
     const hadRosterBaseline = Boolean(rosterBaseline);
@@ -1953,6 +1974,36 @@ async function syncNow(){
       // (tab closed, network drop, or a silently-failed claimRound/endRound call) by having any
       // other syncing client's own check land it instead. See checkTicTacToeRoundEnd for the story.
       if(!activeRound.ended_at) activeRound = await checkTicTacToeRoundEnd(activeRound, nextClaims);
+    }
+    // Teammate mark/unmark toast (item 4): only meaningful for a team-mode Grid Bingo/All round —
+    // TTT's marked_by is never written to (it always uses rounds.claims instead), so this is a
+    // no-op there even without the explicit game_type check, but the check keeps the intent clear.
+    // Unmark attribution uses the PREVIOUS marker's name: exactly right when team_shared_edit is
+    // off (canEditTile() only ever lets the original marker undo their own tile in that case), a
+    // best-effort guess when it's on (any teammate can unmark any tile, and marked_by simply
+    // deletes the key on unmark rather than recording who undid it — the true actor isn't
+    // recoverable from this data at all in that case).
+    if(activeRound && activeRound.teams && activeRound.game_type !== "tictactoe"){
+      const myTeamKey = myTeamId();
+      if(myTeamKey){
+        const myEntry = roundEntries.find(e => e.player_id === myTeamKey);
+        const nextMarked = (myEntry && myEntry.marked_by) || {};
+        const prevMarked = teamMarkSeen.get(activeRound.id);
+        if(prevMarked){
+          new Set([...Object.keys(prevMarked), ...Object.keys(nextMarked)]).forEach(weaponName => {
+            const was = prevMarked[weaponName];
+            const now = nextMarked[weaponName];
+            const wasReal = Boolean(was && was.playerId && was.playerId !== HANDICAP_PLAYER_ID);
+            const nowReal = Boolean(now && now.playerId && now.playerId !== HANDICAP_PLAYER_ID);
+            if(!wasReal && nowReal && now.playerId !== me.id){
+              showToast(`${teamMemberName(now.playerId)} marked ${weaponName}`);
+            } else if(wasReal && !nowReal && was.playerId !== me.id){
+              showToast(`${teamMemberName(was.playerId)} unmarked ${weaponName}`);
+            }
+          });
+        }
+        teamMarkSeen.set(activeRound.id, nextMarked);
+      }
     }
     const nextRoundId = activeRound?.id || null;
     // Round start/end toasts — same "previous vs current" diff shape as the roster join/leave
@@ -2597,7 +2648,10 @@ function buildStartRoundConfig(){
   // like the rest of this panel, reading straight from cardFilterConfig.excludedWeapons so a mode
   // switch never loses the selection.
   buildExcludeWeaponsBox();
-  document.getElementById("spectatorsCanViewCheckbox").checked = Boolean(cardFilterConfig.spectatorsCanView);
+  buildBingoOptions("spectatorVisibilityOptions", [{label:"Progress Only",value:"progress"},{label:"Fully Visible",value:"full"}], cardFilterConfig.spectatorVisibility, value => {
+    cardFilterConfig.spectatorVisibility = value;
+    buildStartRoundConfig();
+  });
   document.getElementById("freeSquareCheckbox").checked = Boolean(cardFilterConfig.freeSquare);
   // Bias picker (item 5) only matters, and is only shown, once Free Square is actually on.
   document.getElementById("freeSquareBiasRow").style.display = cardFilterConfig.freeSquare ? "" : "none";
@@ -2721,7 +2775,7 @@ async function startTicTacToe(){
     max_hard_weapons:cardFilterConfig.maxHardWeapons,
     free_square:Boolean(cardFilterConfig.freeSquare),
     free_square_bias:cardFilterConfig.freeSquareBias,
-    spectators_can_view:Boolean(cardFilterConfig.spectatorsCanView),
+    spectator_visibility:cardFilterConfig.spectatorVisibility,
     winner_id:null,
     ended_at:null,
     started_by:me.name,
@@ -2800,7 +2854,7 @@ async function startTeamGridBingo(roundId, members){
     max_hard_weapons:isAll ? null : cardFilterConfig.maxHardWeapons,
     free_square:Boolean(cardFilterConfig.freeSquare),
     free_square_bias:cardFilterConfig.freeSquareBias,
-    spectators_can_view:Boolean(cardFilterConfig.spectatorsCanView)
+    spectator_visibility:cardFilterConfig.spectatorVisibility
   };
   const sizeA = teams["team-A"].length, sizeB = teams["team-B"].length;
   const playerGap = Math.abs(sizeA - sizeB);
@@ -2865,7 +2919,7 @@ async function startGridBingo(){
     max_hard_weapons:isAll ? null : cardFilterConfig.maxHardWeapons,
     free_square:Boolean(cardFilterConfig.freeSquare),
     free_square_bias:cardFilterConfig.freeSquareBias,
-    spectators_can_view:Boolean(cardFilterConfig.spectatorsCanView)
+    spectator_visibility:cardFilterConfig.spectatorVisibility
   };
   const entries = members.map(([id,board]) => {
     const card = sharedCard ? sharedCard.slice() : (isAll ? fullCard(cardFilterConfig.excludedWeapons) : makeRoundCard(round.grid_size, null, cardFilterConfig.excludedWeapons, cardFilterConfig.maxHardWeapons));
@@ -3266,37 +3320,99 @@ function buildWeaponDifficultyRowOptions(name, selected){
 // Spectating with viewing off (item 4/5): no board, no leaderboard, just a status message. Shared
 // by both renderRoundBoard() and renderTicTacToeRound() — this "nothing to show" state looks
 // identical regardless of game mode.
-function renderSpectatingBlocked(){
-  document.getElementById("viewingBanner").classList.remove("show");
-  document.getElementById("resetBtn").style.display = "none";
-  document.getElementById("progressTrack").style.display = "none";
-  document.getElementById("scoreNum").textContent = "—";
-  document.getElementById("scoreLbl").textContent = "Spectating";
-  document.getElementById("bingoLeaderboard").classList.remove("show");
-  document.getElementById("bingoLeaderboard").innerHTML = "";
-  const status = document.getElementById("gridBingoStatus");
-  status.classList.add("show");
-  status.innerHTML = `<div class="settings-line">${escapeHtml(roundSettingsLine(activeRound))}</div><div>Spectating — round in progress</div>`;
-  document.getElementById("board").replaceChildren();
-}
-function renderRoundBoard(){
-  const own = currentRoundEntry();
-  const spectating = isSpectator();
-  if(spectating && !spectatorsCanView()){ renderSpectatingBlocked(); return; }
+// Side-by-side spectator view (items 2/3): spectators no longer view one entry at a time via the
+// click-a-name/viewingBanner mechanism real players use below — both entries render
+// simultaneously instead (a solo/individual or team round always has exactly 2 entries, so this
+// is always literally "side by side", never a longer list). Masking is uniform across both boards
+// and driven entirely by tileMaskedForSpectator() (spectator_visibility), never the per-player
+// canViewRoundEntry()/tileMaskedFor() rules real participants use.
+function renderSpectatorBoards(){
   const pointsMode = activeRound.scoring_mode === "points";
   const isAll = activeRound.layout === "all";
   const size = Number(activeRound.grid_size);
-  // A spectator has no "own" board to default to — falls back to the first entry instead. If
-  // there's truly nothing yet (round just created, entries still syncing), there's nothing to show.
-  const fallbackEntry = own || roundEntries[0];
-  if(!fallbackEntry) return;
+  const masked = tileMaskedForSpectator();
+
+  document.getElementById("viewingBanner").classList.remove("show");
+  document.getElementById("resetBtn").style.display = "none";
+  document.getElementById("scoreNum").textContent = "—";
+  document.getElementById("scoreLbl").textContent = "Spectating";
+  document.getElementById("progressFill").style.width = "0%";
+
+  // Leaderboard stays informational-only here — no click-to-view, since both boards are already
+  // shown at once below.
+  const leaderboard = document.getElementById("bingoLeaderboard");
+  leaderboard.innerHTML = "";
+  const sorted = roundEntries.slice().sort((a,b) =>
+    (b.lines_completed || 0) - (a.lines_completed || 0) ||
+    (tilesMarkedCount(b) - tilesMarkedCount(a)) ||
+    (pointsMode ? (b.points || 0) - (a.points || 0) : 0)
+  );
+  sorted.forEach(item => {
+    const tiles = tilesMarkedCount(item);
+    const progressText = isAll ? `${tiles} tiles` : `${item.lines_completed || 0} lines · ${tiles} tiles`;
+    const score = pointsMode
+      ? `<span class="pts-main">${item.points || 0} pts</span><span class="lines-sub">${progressText}</span>`
+      : progressText;
+    const members = activeRound.teams && activeRound.teams[item.player_id];
+    const membersLine = members ? `<div class="team-members">${members.map(pid => escapeHtml(teamMemberName(pid))).join(", ")}</div>` : "";
+    const mvpName = members ? computeTeamMVP(item, activeRound) : null;
+    const mvpLine = mvpName ? `<div class="team-mvp">MVP: ${escapeHtml(mvpName)}</div>` : "";
+    const card = document.createElement("div");
+    card.className = "player" + (activeRound.winner_id === item.player_id ? " winner" : "");
+    card.innerHTML = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}</span></div>${membersLine}<div class="bingo-score">${score}</div>${mvpLine}`;
+    leaderboard.appendChild(card);
+  });
+  leaderboard.classList.add("show");
+
+  const status = document.getElementById("gridBingoStatus");
+  status.classList.add("show");
+  const settingsLine = roundSettingsLine(activeRound);
+  let resultLine;
+  if(activeRound.winner_id){
+    resultLine = `<strong>${escapeHtml((roundEntries.find(item => item.player_id === activeRound.winner_id) || {}).player_name || "A player")} won this round</strong>`;
+  } else if(activeRound.ended_at){
+    resultLine = "<strong>Round ended</strong>";
+  } else {
+    resultLine = "Round in progress";
+  }
+  // Item 3: replaces the old viewingBanner/"Back to my board" concept for spectators entirely —
+  // one always-visible line naming which visibility mode is active, not just shown when blocked.
+  status.innerHTML = `<div class="settings-line">${escapeHtml(settingsLine)}</div><div>${resultLine}</div><div class="spectator-line">You're spectating — ${escapeHtml(spectatorVisibilityLabel())}</div>`;
+
+  const wrap = document.createElement("div");
+  wrap.className = "spectator-boards";
+  roundEntries.forEach(spectatedEntry => {
+    const col = document.createElement("div");
+    col.className = "spectator-board-col";
+    const label = document.createElement("div");
+    label.className = "spectator-board-label";
+    label.textContent = spectatedEntry.player_name;
+    col.appendChild(label);
+    if(isAll){
+      const container = document.createElement("div");
+      renderCategorySections(container, spectatedEntry.marks || {}, false, null, masked, false, spectatedEntry.marked_by || {});
+      col.appendChild(container);
+    } else {
+      const grid = document.createElement("div");
+      grid.className = "grid bingo-grid";
+      grid.style.setProperty("--bingo-size", size);
+      spectatedEntry.card.forEach(name => grid.appendChild(makeTile({name,key:name}, {marks:spectatedEntry.marks || {}, marked_by:spectatedEntry.marked_by || {}}, false, undefined, masked)));
+      col.appendChild(grid);
+    }
+    wrap.appendChild(col);
+  });
+  document.getElementById("board").replaceChildren(wrap);
+}
+function renderRoundBoard(){
+  if(isSpectator()){ renderSpectatorBoards(); return; }
+  const own = currentRoundEntry();
+  if(!own) return; // shouldn't happen (isSpectator() covers the no-entry case above) — just a safe no-op
+  const pointsMode = activeRound.scoring_mode === "points";
+  const isAll = activeRound.layout === "all";
+  const size = Number(activeRound.grid_size);
   const viewed = (roundViewingId && roundViewingId !== myEntryId()) ? roundEntries.find(e => e.player_id === roundViewingId) : null;
-  // Item 4: a spectator's ability to open ANY entry is governed by spectators_can_view alone
-  // (already confirmed true here, or we'd have returned above), not canViewRoundEntry()'s
-  // per-player hidden/visible/finish rules — those still apply unchanged for real participants.
-  const canView = item => spectating ? true : canViewRoundEntry(item);
-  const entry = (viewed && canView(viewed)) ? viewed : fallbackEntry;
-  const editable = !spectating && entry.player_id === myEntryId() && !activeRound.ended_at && !entry.finished_at;
+  const entry = (viewed && canViewRoundEntry(viewed)) ? viewed : own;
+  const editable = entry.player_id === myEntryId() && !activeRound.ended_at && !entry.finished_at;
   document.getElementById("viewingBanner").classList.toggle("show", entry.player_id !== myEntryId());
   document.getElementById("viewingName").textContent = entry.player_name;
   document.getElementById("resetBtn").style.display = "none";
@@ -3304,10 +3420,9 @@ function renderRoundBoard(){
   // While the round is active (not yet ended) the header shows round progress; once it ends, the
   // round grid/leaderboard stay visible but there's nothing actively being tracked at that moment
   // (the old fallback here referenced the default 43-weapon tracker, which no longer exists in a room).
-  // Spectators (item 6) have no "own" progress to show either, so they get the same idle dash.
-  if(activeRound.ended_at || spectating){
+  if(activeRound.ended_at){
     document.getElementById("scoreNum").textContent = "—";
-    document.getElementById("scoreLbl").textContent = spectating ? "Spectating" : "Idle";
+    document.getElementById("scoreLbl").textContent = "Idle";
     document.getElementById("progressFill").style.width = "0%";
   } else {
     const ownDone = tilesMarkedCount(own);
@@ -3333,13 +3448,13 @@ function renderRoundBoard(){
     ranks.set(item.player_id, rank);
   });
   sorted.forEach(item => {
-    const viewable = canView(item);
+    const viewable = canViewRoundEntry(item);
     const locked = item.player_id !== myEntryId() && !viewable;
     const card = document.createElement("div");
     card.className = "player" + (activeRound.winner_id === item.player_id ? " winner" : "") + (entry.player_id === item.player_id ? " viewing" : "") + (locked ? " locked" : "");
     const r = ranks.get(item.player_id);
     const badge = r <= 3 ? medalBadge(r) : "";
-    const showIcon = spectating ? true : (scoped ? item.player_id !== myEntryId() : true);
+    const showIcon = scoped ? item.player_id !== myEntryId() : true;
     const visIcon = showIcon ? `<span class="vis-icon${viewable ? " open" : ""}" title="${viewable ? "You can view this card" : "Hidden from you"}">${viewable ? EYE_OPEN : EYE_CLOSED}</span>` : "";
     const tiles = tilesMarkedCount(item);
     const progressText = isAll ? `${tiles} tiles` : `${item.lines_completed || 0} lines · ${tiles} tiles`;
@@ -3358,7 +3473,7 @@ function renderRoundBoard(){
     const inner = `<div class="top"><span class="nm">${escapeHtml(item.player_name)}</span><span class="ct">${activeRound.winner_id === item.player_id ? "★" : ""}${badge}${visIcon}</span></div>${membersLine}<div class="bingo-score">${score}</div>${mvpLine}`;
     if(viewable){
       card.innerHTML = `<button type="button" class="open">${inner}</button>`;
-      card.querySelector(".open").addEventListener("click", () => { roundViewingId = (!spectating && item.player_id === myEntryId()) ? null : item.player_id; renderAll(); });
+      card.querySelector(".open").addEventListener("click", () => { roundViewingId = item.player_id === myEntryId() ? null : item.player_id; renderAll(); });
     } else {
       card.innerHTML = inner;
     }
@@ -3380,7 +3495,7 @@ function renderRoundBoard(){
   }
   status.innerHTML = `<div class="settings-line">${escapeHtml(settingsLine)}</div><div>${resultLine}</div>`;
 
-  const masked = spectating ? tileMaskedForSpectator() : tileMaskedFor(entry);
+  const masked = tileMaskedFor(entry);
   if(isAll){
     const container = document.createElement("div");
     renderCategorySections(container, entry.marks || {}, editable, attemptToggleRoundCard, masked, editable, entry.marked_by || {});
@@ -3398,10 +3513,10 @@ function renderRoundBoard(){
 // shared board for everyone (no per-player "viewing someone else's card" concept, no masking/
 // visibility), so there's no viewingBanner/roundViewingId handling here at all.
 function renderTicTacToeRound(){
-  // item 5: TTT's board is always fully visible by design — spectators_can_view only ever gates
-  // whether spectators see it AT ALL, never any masking (there's no per-player visibility concept
-  // here to begin with, unlike Grid Bingo's card_visibility).
-  if(isSpectator() && !spectatorsCanView()){ renderSpectatingBlocked(); return; }
+  // TTT's board is always fully visible by design regardless of spectator_visibility — there's no
+  // per-player visibility concept here to begin with, unlike Grid Bingo's card_visibility, and no
+  // more on/off gate (item 1) — a spectator always sees the same shared board everyone else does.
+  const spectating = isSpectator();
   const size = Number(activeRound.grid_size);
   const mySide = myTeamId();
   document.getElementById("viewingBanner").classList.remove("show");
@@ -3449,7 +3564,10 @@ function renderTicTacToeRound(){
   } else {
     resultLine = "Round in progress";
   }
-  status.innerHTML = `<div class="settings-line">${escapeHtml(settingsLine)}</div><div>${resultLine}</div>`;
+  // Item 3: same always-visible spectator status line as Grid Bingo/All, in place of the old
+  // viewingBanner concept (never meaningfully used here anyway — TTT force-hides it above).
+  const spectatorLine = spectating ? `<div class="spectator-line">You're spectating — ${escapeHtml(spectatorVisibilityLabel())}</div>` : "";
+  status.innerHTML = `<div class="settings-line">${escapeHtml(settingsLine)}</div><div>${resultLine}</div>${spectatorLine}`;
 
   const grid = document.createElement("div");
   grid.className = "grid bingo-grid";
@@ -3758,9 +3876,6 @@ document.getElementById("tttDrawOnFullCheckbox").addEventListener("change", e =>
 document.getElementById("freeSquareCheckbox").addEventListener("change", e => {
   cardFilterConfig.freeSquare = e.target.checked;
   buildStartRoundConfig(); // shows/hides the bias row (item 5) immediately, not on the next unrelated change
-});
-document.getElementById("spectatorsCanViewCheckbox").addEventListener("change", e => {
-  cardFilterConfig.spectatorsCanView = e.target.checked;
 });
 document.getElementById("muteBtn").addEventListener("click", async () => {
   me.muted = !me.muted;
@@ -4275,14 +4390,8 @@ async function onLoggedIn(newSession){
   me.roomCode = await Store.getMyRoom(me.id);
   const requestedRoom = roomCodeFromUrl();
   if(requestedRoom && requestedRoom !== me.roomCode) await switchToRoom(requestedRoom);
-  // Loaded once at login (step 2, item 2) so the round-config panel's "Max Hard Weapons" row can
-  // decide whether to show itself the first time it's opened, without waiting on the separate
-  // Weapon Difficulty modal ever having been opened this session. That modal still refetches its
-  // own fresh copy every time it opens — this is just an early baseline, not a substitute for it.
-  try{
-    const rows = await Store.listWeaponDifficulty();
-    weaponDifficulty = Object.fromEntries(rows.map(r => [r.weapon_name, r.difficulty]));
-  }catch(e){ console.error("weapon difficulty load failed", e); }
+  // weaponDifficulty no longer needs a separate load here (item 7) — syncNow() below now
+  // refreshes it on every poll tick, including this first one.
   await syncNow();
   renderAll();
   startPolling();
