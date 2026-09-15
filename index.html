@@ -235,23 +235,49 @@
   .spectator-boards{display:flex;gap:20px;flex-wrap:wrap;}
   .spectator-board-col{flex:1 1 320px;min-width:260px;}
   .spectator-board-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:8px;}
-  /* Battleship (Phase 1: functional, not pretty — polish is Phase 2). Plain labeled cells, no
-     weapon-image tile styling — this grid isn't the weapon-card paradigm makeTile()/.tile use. */
+  /* Battleship (Phase 2 polish). Attack Grid cells reuse the actual weapon-image/onerror pattern
+     .tile already uses (item 2); My Fleet/spectator cells stay plain glyph+tint (no image — a
+     ship's true shape shouldn't look like a weapon tile). */
   .bs-palette{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}
   .bs-hint{font-size:12px;color:var(--dim);}
-  .bs-orient-btn{align-self:flex-start;background:none;border:1px solid var(--panel-line);color:var(--dim);border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;}
-  .bs-orient-btn:hover{border-color:var(--mark);color:var(--ink);}
+  /* Rotate button made more prominent/discoverable (item 6) — solid mark-colored outline instead
+     of a plain ghost button, plus the "R" hotkey surfaced right on the label. */
+  .bs-orient-btn{align-self:flex-start;background:var(--panel);border:2px solid var(--mark);color:var(--ink);border-radius:8px;padding:9px 16px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 0 10px 1px var(--mark-soft);}
+  .bs-orient-btn:hover{filter:brightness(1.12);}
+  .bs-orient-btn .bs-orient-key{opacity:.7;font-weight:400;font-size:11px;margin-left:6px;}
   .bs-ship-row{display:flex;flex-wrap:wrap;gap:8px;}
   .bs-ship-btn{background:none;border:1px solid var(--panel-line);color:var(--dim);border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;}
   .bs-ship-btn.on{background:var(--mark-soft);border-color:var(--mark);color:var(--ink);}
-  .bs-grid{display:grid;grid-template-columns:repeat(var(--bs-size),1fr);gap:4px;max-width:calc(var(--bs-size) * 46px + (var(--bs-size) - 1) * 4px);margin:0 auto;}
-  .bs-cell{aspect-ratio:1;border:1px solid var(--panel-line);border-radius:6px;background:#1a1329;color:var(--dim);font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-family:inherit;}
+  /* Wired to the same --tile-min the tile-size picker already drives for Grid Bingo/TTT (item 4) —
+     same max-width-cap-then-center technique .grid.bingo-grid uses, so Small/Medium/Large actually
+     resize this board instead of doing nothing. --tile-min's own range (160-280px) is already well
+     above this grid's old fixed 46px, satisfying "bigger baseline" as a side effect of reusing it. */
+  .bs-grid{display:grid;grid-template-columns:repeat(var(--bs-size),minmax(0,1fr));gap:8px;max-width:calc(var(--bs-size) * var(--tile-min) + (var(--bs-size) - 1) * 8px);margin:0 auto;}
+  /* Contrast fix (item 3): var(--panel) + a visibly lighter border reads clearly against the page
+     background, unlike the old near-black #1a1329 fill that barely separated from it. */
+  .bs-cell{
+    position:relative;aspect-ratio:1/1;border:1.5px solid #4a3d6e;border-radius:9px;
+    background:var(--panel);color:var(--dim);font-size:16px;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;padding:0;font-family:inherit;overflow:hidden;
+    transition:transform .1s ease,border-color .1s ease,background .1s ease;
+  }
+  .bs-cell:hover:not(:disabled){transform:translateY(-1px);border-color:var(--mark);}
   .bs-cell:disabled{cursor:default;}
-  .bs-cell.bs-ship{background:var(--mark-soft);border-color:var(--mark);color:var(--ink);}
-  .bs-cell.bs-hit{background:rgba(255,77,106,.28);border-color:var(--melee);color:var(--ink);}
-  .bs-cell.bs-miss{color:var(--dim);}
-  .bs-cell.bs-unknown{font-size:8.5px;line-height:1.15;padding:2px;text-align:center;overflow:hidden;word-break:break-word;}
-  .bs-cell.bs-unknown:hover:not(:disabled){border-color:var(--mark);color:var(--ink);}
+  .bs-cell .bs-weapon-image{width:100%;height:100%;object-fit:contain;padding:6px 5px 16px;}
+  .bs-cell .bs-weapon-name{position:absolute;bottom:3px;left:0;right:0;text-align:center;font-size:9px;color:var(--dim);padding:0 3px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .bs-cell svg{width:55%;height:55%;color:var(--panel-line);}
+  /* Distinguishable ships (item 5): alternating tint by ship index — border-radius is set inline
+     per cell (battleshipShipCellVisual()) so only a ship's true start/end reads as rounded, with
+     touching middle cells flush to form one continuous pill rather than a row of separate circles. */
+  .bs-cell.bs-ship-a{background:var(--mark-soft);border-color:var(--mark);color:var(--ink);}
+  .bs-cell.bs-ship-b{background:rgba(255,157,77,.24);border-color:var(--primary);color:var(--ink);}
+  .bs-cell.bs-hit{background:rgba(255,77,106,.32);border-color:var(--melee);color:var(--ink);font-size:19px;}
+  .bs-cell.bs-miss{color:var(--dim);font-size:19px;}
+  /* Hover ghost preview (item 7, non-touch only — see supportsBattleshipHoverPreview()); !important
+     wins over whatever base .bs-cell background the empty cell already has. */
+  .bs-cell.bs-preview-valid{background:rgba(77,255,166,.32) !important;border-color:var(--utility) !important;}
+  .bs-cell.bs-preview-invalid{background:rgba(255,77,106,.32) !important;border-color:var(--melee) !important;}
   .bs-battle-boards{display:flex;gap:20px;flex-wrap:wrap;}
   .bs-board-col{flex:1 1 260px;min-width:220px;}
   .bs-board-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:8px;}
@@ -260,9 +286,10 @@
   .bs-ready-row button.primary{background:var(--mark);border-color:var(--mark);color:#0c1420;font-weight:700;}
   .bs-ready-row button.primary:disabled{opacity:.45;cursor:not-allowed;}
   .bs-ready-status{font-size:12px;color:var(--dim);}
-  .bs-spectator-summary{display:flex;flex-direction:column;gap:10px;}
-  .bs-spectator-row{background:var(--panel);border:1px solid var(--panel-line);border-radius:9px;padding:10px 14px;font-size:12.5px;color:var(--dim);}
-  .bs-spectator-row .nm{color:var(--ink);font-weight:700;margin-bottom:3px;}
+  /* Stacked spectator boards (item 9) — vertical, not side by side like renderSpectatorBoards()
+     uses for Grid Bingo/TTT, per spec. */
+  .bs-spectator-stack{display:flex;flex-direction:column;gap:24px;}
+  .bs-spectator-side-label{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;}
   /* Live-round roster (item 6). */
   .round-roster{display:none;flex-wrap:wrap;gap:18px;margin:-4px 0 14px;font-size:12.5px;}
   .round-roster.show{display:flex;}
@@ -424,6 +451,18 @@
   .history-filters select{width:100%;background:#14101f;border:1px solid var(--panel-line);color:var(--ink);padding:9px 10px;border-radius:8px;font-size:13px;font-family:inherit;}
   .modal-card h3{margin:0 0 8px;font-size:22px;font-weight:800;}
   .modal-card p{margin:0 0 20px;color:var(--dim);font-size:14px;line-height:1.5;}
+  /* How to Play (static rulebook) — reuses the modal-card's own p/h3 styling for the intro, just
+     adds its own section heading/points-table/list treatment on top. */
+  .htp-section{margin-bottom:22px;}
+  .htp-section h4{margin:0 0 8px;font-size:15px;font-weight:800;color:var(--ink);}
+  .htp-section p{margin-bottom:10px;}
+  .htp-points{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:4px;}
+  .htp-points td{padding:6px 10px;border-top:1px solid var(--panel-line);color:var(--dim);}
+  .htp-points tr:first-child td{border-top:none;}
+  .htp-points td:last-child{text-align:right;font-weight:700;color:var(--ink);white-space:nowrap;}
+  .htp-list{margin:0;padding-left:18px;color:var(--dim);font-size:13.5px;line-height:1.6;}
+  .htp-list li{margin-bottom:4px;}
+  .htp-list strong{color:var(--ink);}
   .modal-card input{
     width:100%;background:#14101f;border:1px solid var(--panel-line);color:var(--ink);
     padding:11px 14px;border-radius:9px;font-size:15px;font-family:inherit;margin-bottom:14px;
@@ -534,6 +573,7 @@
     <div class="room-actions">
       <button id="historyBtn" type="button">History</button>
       <button id="weaponDifficultyBtn" type="button">Weapon Difficulty</button>
+      <button id="howToPlayBtn" type="button">How to Play</button>
       <button id="settingsBtn" type="button">Settings</button>
       <button id="logoutBtn" type="button">Log out</button>
     </div>
@@ -839,6 +879,62 @@
       <p>Tag how hard each weapon is to use. Changes save instantly.</p>
       <div id="weaponDifficultyList"></div>
       <button id="closeWeaponDifficultyBtn" class="auth-toggle-btn" type="button">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Static rulebook (no schema, no live data) — works both in and out of a room since it never
+     reads activeRound/roundEntries, just the game modes/options in general. -->
+<div class="modal" id="howToPlayModal">
+  <div class="modal-card wide">
+    <button id="closeHowToPlayBtnTop" class="modal-sticky-close" type="button" aria-label="Close">&times;</button>
+    <div class="history-modal-scroll">
+      <h3>How to Play</h3>
+      <p>Every mode revolves around the same core action: land a kill with a specific weapon in Rivals, then mark it off here. What that unlocks differs by mode.</p>
+
+      <div class="htp-section">
+        <h4>Grid Bingo / All</h4>
+        <p>Tap a weapon's tile after you land a kill with it. <strong>Race:</strong> first to clear their whole card wins. <strong>Points:</strong> scored below. Team rounds can add an underdog multiplier that boosts a smaller team's points, and an uneven team's smaller side starts with a few free handicap tiles already marked (those never score anything themselves — just a head start).</p>
+        <table class="htp-points">
+          <tr><td>Per tile</td><td>10 pts</td></tr>
+          <tr><td>Per completed line</td><td>100 pts</td></tr>
+          <tr><td>Full clear</td><td>+250 pts</td></tr>
+        </table>
+      </div>
+
+      <div class="htp-section">
+        <h4>Tic-Tac-Toe</h4>
+        <p>Every square on the shared board is assigned a weapon — land a kill with it to claim that square for your side. First side to complete a row, column, or diagonal wins. <strong>Take-backs</strong>, if enabled, lets either side reclaim a square the opponent already holds instead of only ever claiming empty ones.</p>
+        <table class="htp-points">
+          <tr><td>Claim (take-backs on)</td><td>10 pts</td></tr>
+          <tr><td>Claim (take-backs off)</td><td>15 pts</td></tr>
+          <tr><td>Stealing an opponent's square</td><td>+5 pts</td></tr>
+          <tr><td>Win</td><td>+250 pts</td></tr>
+        </table>
+      </div>
+
+      <div class="htp-section">
+        <h4>Battleship</h4>
+        <p>Place your fleet on your own grid during placement — nobody but your own side can see it. Once both sides ready up, every weapon on the board gets assigned to one square each; land a kill with a weapon to attack the matching square on the opponent's grid. Sink their entire fleet to win.</p>
+        <table class="htp-points">
+          <tr><td>Per attack</td><td>5 pts</td></tr>
+          <tr><td>Hit bonus</td><td>+5 pts</td></tr>
+          <tr><td>Sinking a ship</td><td>+10 pts</td></tr>
+          <tr><td>Win</td><td>+250 pts</td></tr>
+        </table>
+      </div>
+
+      <div class="htp-section">
+        <h4>Shared round-start options</h4>
+        <ul class="htp-list">
+          <li><strong>Exclude weapons</strong> — remove specific weapons from the pool before a round starts.</li>
+          <li><strong>Max hard weapons</strong> — caps how many weapons tagged "Hard" (via Weapon Difficulty) can end up on a card or in the pool.</li>
+          <li><strong>Free square</strong> — everyone starts with one random square already marked/claimed; its difficulty bias skews that freebie toward easier, harder, or purely random weapons.</li>
+          <li><strong>Spectators</strong> — controls what someone watching without a board of their own can see: Progress Only (masked until marked/hit) or Fully Visible.</li>
+        </ul>
+      </div>
+
+      <button id="closeHowToPlayBtn" class="auth-toggle-btn" type="button">Close</button>
     </div>
   </div>
 </div>
@@ -1238,6 +1334,15 @@ const Store = {
     if(error) throw new Error("square unclaim failed: " + error.message);
     return data;
   },
+  // Tic-Tac-Toe points mode: an atomic server-side +=delta, called once a claim/win is already
+  // confirmed to have actually landed — never accumulated client-side first (same "derive, verify,
+  // then persist" shape claimSquare() already uses for the claim itself). Void RPC (204, no body).
+  async incrementRoundEntryPoints(roundId, playerId, delta){
+    const {error} = await sbClient.rpc("increment_round_entry_points", {
+      p_round_id: roundId, p_player_id: playerId, p_delta: delta
+    });
+    if(error) throw new Error("points increment failed: " + error.message);
+  },
   // Battleship (Phase 1): placement and ready-state are plain whole-column PATCHes (no RPC, no
   // atomicity needed per the spec — the caller always merges onto its own freshly-synced
   // activeRound.ships/ready before calling, same read-merge-write shape saveRoundEntry's
@@ -1423,7 +1528,7 @@ let lastRoundId = null;
 let roundEntries = [];
 let roundViewingId = null;
 let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisibility:"hidden",teamFormation:"random",manualTeams:{},teamSharedEdit:false,underdogBonus:"none"};
-let tttConfig = {gridSize:3,teamFormation:"random",manualTeams:{},takeBacks:false,drawOnFull:false};
+let tttConfig = {gridSize:3,teamFormation:"random",manualTeams:{},takeBacks:false,drawOnFull:false,scoringMode:"race"};
 let battleshipConfig = {gridSize:4,scoringMode:"points",teamFormation:"random",manualTeams:{}};
 // Fleet by grid size (Battleship Phase 1) — the larger side in an uneven-teams round drops the
 // length-1 Sub from this same array rather than getting its own separate list; see
@@ -2815,7 +2920,9 @@ function buildStartRoundConfig(){
   // Battleship has no card-mode/visibility/take-backs/draw-on-full/underdog concept at all.
   document.getElementById("cardModeRow").style.display = (!isTTT && !isAll && !isBattleship) ? "" : "none";
   document.getElementById("cardVisibilityRow").style.display = (isTTT || isBattleship) ? "none" : "";
-  document.getElementById("scoringModeRow").style.display = isTTT ? "none" : "";
+  // Scoring mode now applies to Tic-Tac-Toe too (item 1) — reuses the exact same shared
+  // #scoringModeOptions component, just fed tttConfig.scoringMode/its own option labels below.
+  document.getElementById("scoringModeRow").style.display = "";
   document.getElementById("teamSharedEditRow").style.display = (!isTTT && !isBattleship && isTeamMode) ? "" : "none";
   // Underdog bonus (item 2, pre-existing): team mode + points scoring only.
   document.getElementById("underdogBonusRow").style.display = (!isTTT && !isBattleship && isTeamMode && gridBingoConfig.scoringMode === "points") ? "" : "none";
@@ -2858,6 +2965,7 @@ function buildStartRoundConfig(){
   } else {
     document.getElementById("tttTakeBacksCheckbox").checked = Boolean(tttConfig.takeBacks);
     if(tttConfig.takeBacks) document.getElementById("tttDrawOnFullCheckbox").checked = Boolean(tttConfig.drawOnFull);
+    buildBingoOptions("scoringModeOptions", [{label:"Race only (first line wins)",value:"race"},{label:"Points (per-claim + steal + win bonuses)",value:"points"}], tttConfig.scoringMode, value => { tttConfig.scoringMode = value; buildStartRoundConfig(); });
   }
 
   // Team formation: one shared row/box for whichever engine is active (>2-person rooms only).
@@ -2903,8 +3011,11 @@ async function startTicTacToe(){
     // distinct, so the second draw excludes whatever the first one already took.
     const freeA = weightedPick(sharedCard, cardFilterConfig.freeSquareBias);
     const freeB = weightedPick(sharedCard.filter(n => n !== freeA), cardFilterConfig.freeSquareBias);
-    claims[freeA] = {side:"team-A", playerId:(teams["team-A"] || [])[0] || null, at:Date.now()};
-    claims[freeB] = {side:"team-B", playerId:(teams["team-B"] || [])[0] || null, at:Date.now()};
+    // free:true (points mode item 2): these two are pre-marked here at creation, never through a
+    // real claimSquare() call, so nothing here ever earns claim points for them by construction —
+    // the flag just makes that explicit on the data itself rather than leaving it implicit.
+    claims[freeA] = {side:"team-A", playerId:(teams["team-A"] || [])[0] || null, at:Date.now(), free:true};
+    claims[freeB] = {side:"team-B", playerId:(teams["team-B"] || [])[0] || null, at:Date.now(), free:true};
   }
   const round = {
     id:roundId,
@@ -2914,7 +3025,7 @@ async function startTicTacToe(){
     grid_size:size,
     layout:"square",
     card_mode:"shared",
-    scoring_mode:"race",
+    scoring_mode:tttConfig.scoringMode,
     card_visibility:"visible",
     shared_card:sharedCard,
     claims,
@@ -3333,7 +3444,17 @@ async function checkTicTacToeRoundEnd(round, claims){
   if(winningSide){
     try{
       const landed = await Store.claimRound(round.id, winningSide, me.name);
-      if(landed) return {...round, claims, winner_id:winningSide, ended_at:Date.now(), ended_by:me.name};
+      if(landed){
+        // Win bonus (points mode item 3): gated on `landed`, not just "a winning side was found" —
+        // claimRound()'s own winner_id=is.null filter is the atomic guard that makes this fire
+        // exactly once even though every syncing client re-runs this same check (see the safety-net
+        // doc comment above); tying the points call to that same landed flag means it can't double-
+        // award just because two clients both detected the win in the same poll window.
+        if(round.scoring_mode === "points"){
+          try{ await Store.incrementRoundEntryPoints(round.id, winningSide, 250); }catch(e){ console.error("win bonus points failed", e); }
+        }
+        return {...round, claims, winner_id:winningSide, ended_at:Date.now(), ended_by:me.name};
+      }
     }catch(e){ console.error("round auto-end (win) failed", e); }
   } else if(Object.keys(claims).length >= size * size && (!round.take_backs || round.draw_on_full)){
     // Full grid, no line (item 6): with take-backs off this is always a real draw — nothing can
@@ -3376,9 +3497,25 @@ function attemptClaimSquare(name){
     claimSquare(name);
   }
 }
+// Points-mode claim delta (item 2): +10 for a plain claim with take-backs on, +15 with take-backs
+// off (there's no steal to distinguish there — attemptClaimSquare() never even lets claimSquare()
+// run against an already-claimed square when take-backs is off), +5 more on top of the take-backs-
+// on base specifically when the square just taken genuinely belonged to the OPPOSING side a moment
+// ago (a real steal). previousClaim is the caller's own pre-claim snapshot of this square — it has
+// to be read before the claim_square() RPC call, since a square can flip sides more than once
+// under take-backs and the final claims state alone can't tell you what it was immediately before
+// THIS particular claim.
+function tttClaimPointsDelta(round, mySide, previousClaim){
+  const takeBacks = Boolean(round.take_backs);
+  const wasSteal = takeBacks && Boolean(previousClaim && previousClaim.side && previousClaim.side !== mySide);
+  return (takeBacks ? 10 : 15) + (wasSteal ? 5 : 0);
+}
 async function claimSquare(name){
   const mySide = myTeamId();
   if(!mySide) return;
+  // Read before the claim lands (see tttClaimPointsDelta's doc comment) — this is intentionally
+  // the LOCAL pre-claim snapshot, not anything refetched after.
+  const previousClaim = (activeRound.claims || {})[name];
   let claims;
   try{
     claims = await Store.claimSquare(activeRound.id, name, mySide, me.id, Boolean(activeRound.take_backs));
@@ -3397,6 +3534,10 @@ async function claimSquare(name){
     await syncNow();
     renderAll();
     return;
+  }
+  if(activeRound.scoring_mode === "points"){
+    try{ await Store.incrementRoundEntryPoints(activeRound.id, mySide, tttClaimPointsDelta(activeRound, mySide, previousClaim)); }
+    catch(e){ console.error("claim points failed", e); }
   }
   activeRound = await checkTicTacToeRoundEnd(activeRound, claims);
   await syncNow();
@@ -3534,20 +3675,28 @@ async function placeBattleshipShip(length, startRow, startCol){
   battleshipPendingLength = null;
   renderAll();
 }
-async function removeBattleshipShip(shipIndex){
+// Item 8: tapping a placed ship removes it AND re-queues it as the pending placement (correct
+// length + its original orientation pre-selected) — a move, not a delete-then-reselect-from-
+// palette round trip. Placing it again fully "removes" it in the old sense: just tap its palette
+// button a second time to deselect without placing anywhere, same as canceling any fresh pick.
+async function pickUpBattleshipShip(shipIndex){
   const mySide = myTeamId();
   if(!mySide || !activeRound || activeRound.phase !== "placement") return;
   const existing = (activeRound.ships || {})[mySide] || [];
+  const ship = existing[shipIndex];
+  if(!ship) return;
   const nextForSide = existing.slice(0, shipIndex).concat(existing.slice(shipIndex + 1));
   const nextShips = {...(activeRound.ships || {}), [mySide]:nextForSide};
   try{
     await Store.saveBattleshipShips(activeRound.id, nextShips);
   }catch(e){
-    console.error("ship removal failed", e);
-    showToast("Couldn't remove that ship — try again.");
+    console.error("ship pickup failed", e);
+    showToast("Couldn't pick up that ship — try again.");
     return;
   }
   activeRound = {...activeRound, ships:nextShips};
+  battleshipPendingLength = ship.cells.length;
+  if(ship.cells.length >= 2) battleshipOrientation = ship.cells[0][0] === ship.cells[1][0] ? "h" : "v";
   renderAll();
 }
 // Appends (never replaces) my uid into ready[mySide], then optimistically calls
@@ -3599,12 +3748,20 @@ function battleshipWeaponAt(round, row, col){
   const map = round.weapon_map || {};
   return Object.keys(map).find(name => map[name] === idx) || null;
 }
-async function attemptBattleshipAttack(row, col){
+// Item 1: every attack (not just a winning one) is now confirmed first — grids sit close together
+// and a misclick is easy to make. Reuses the existing showFinishConfirm modal already parametrized
+// for this (title/message/confirmLabel), same as the win-confirm/mark-and-finish flows elsewhere.
+function attemptBattleshipAttack(row, col){
   const mySide = myTeamId();
   if(!mySide || !activeRound || activeRound.phase !== "battle" || activeRound.ended_at) return;
   if(((activeRound.attacks || {})[mySide] || {})[`${row},${col}`]) return; // already resolved, no-op
   const weapon = battleshipWeaponAt(activeRound, row, col);
   if(!weapon) return; // defensive — every cell has a mapped weapon given a full-coverage pool
+  showFinishConfirm(`Attack row ${row + 1}, column ${col + 1} using ${weapon}? This can't be undone.`, () => performBattleshipAttack(row, col, weapon), "Confirm attack", "Attack");
+}
+async function performBattleshipAttack(row, col, weapon){
+  const mySide = myTeamId();
+  if(!mySide || !activeRound) return;
   let result;
   try{
     result = await Store.resolveBattleshipAttack(activeRound.id, mySide, row, col, weapon);
@@ -3659,7 +3816,7 @@ function roundSettingsLine(round){
   // Tic Tac Toe (item 3): no card_mode/visibility/scoring concept at all — a completely different
   // settings line, not the Grid Bingo one below with an extra branch bolted on.
   if(round.game_type === "tictactoe"){
-    return [roundSizeLabel(round), "Tic Tac Toe", round.take_backs ? "Take-backs on" : "Take-backs off"].filter(Boolean).join(" · ");
+    return [roundSizeLabel(round), "Tic Tac Toe", round.take_backs ? "Take-backs on" : "Take-backs off", round.scoring_mode === "points" ? "Points" : "Race"].filter(Boolean).join(" · ");
   }
   // Battleship (Phase 1): no card_mode/card_visibility concept either — its own settings line
   // rather than the Grid Bingo one below with a misleading "Team, same card" bolted on.
@@ -3972,9 +4129,15 @@ function renderTicTacToeRound(){
     // computeTeamMVP() already degrades to null with nothing claimed yet, safe unconditionally.
     const mvpName = members ? computeTeamMVP(entry, activeRound) : null;
     const mvpLine = mvpName ? `<div class="team-mvp">MVP: ${escapeHtml(mvpName)}</div>` : "";
+    // Points mode (item 1): same pts-main/lines-sub layout Grid Bingo/Battleship's own leaderboard
+    // cards already use, so live points are actually visible somewhere during the round rather than
+    // only showing up afterward in History.
+    const score = activeRound.scoring_mode === "points"
+      ? `<span class="pts-main">${entry.points || 0} pts</span><span class="lines-sub">${squaresClaimed} squares</span>`
+      : `${squaresClaimed} squares`;
     const card = document.createElement("div");
     card.className = "player" + (activeRound.winner_id === teamKey ? " winner" : "") + (mySide === teamKey ? " viewing" : "");
-    card.innerHTML = `<div class="top"><span class="nm">${escapeHtml(entry.player_name)}</span><span class="ct">${activeRound.winner_id === teamKey ? "★" : ""}</span></div>${membersLine}<div class="bingo-score">${squaresClaimed} squares</div>${mvpLine}`;
+    card.innerHTML = `<div class="top"><span class="nm">${escapeHtml(entry.player_name)}</span><span class="ct">${activeRound.winner_id === teamKey ? "★" : ""}</span></div>${membersLine}<div class="bingo-score">${score}</div>${mvpLine}`;
     leaderboard.appendChild(card);
   });
   leaderboard.classList.add("show");
@@ -4010,9 +4173,8 @@ function renderTicTacToeRound(){
   document.getElementById("board").replaceChildren(grid);
 }
 
-// Battleship (Phase 1: functional, not pretty — polish is Phase 2). A plain labeled button, no
-// weapon-image/tile styling borrowed from makeTile()/makeClaimSquare() — those are both tightly
-// bound to the weapon-card paradigm this grid doesn't share, coordinates aren't weapon names.
+// Battleship (Phase 2 polish). A plain labeled/icon button — used for ship/hit/miss/blank cells,
+// never weapon images (see makeBattleshipWeaponCell below for the Attack Grid's own cells, item 2).
 function makeBattleshipCell(label, className, onClick, title){
   const cell = document.createElement("button");
   cell.type = "button";
@@ -4023,11 +4185,104 @@ function makeBattleshipCell(label, className, onClick, title){
   if(onClick) cell.addEventListener("click", onClick);
   return cell;
 }
+// Item 2: Attack Grid cells before they're resolved show the actual weapon image, same
+// weapons/<slug>.png asset + onerror-swap-to-BLANK fallback makeTile()/makeClaimSquare() already
+// use — not the plain text label the old .bs-unknown cell showed.
+function makeBattleshipWeaponCell(weaponName, onClick){
+  const cell = document.createElement("button");
+  cell.type = "button";
+  cell.className = "bs-cell bs-unknown";
+  cell.title = weaponName;
+  cell.disabled = !onClick;
+  cell.innerHTML = `<img class="bs-weapon-image" src="weapons/${slug(weaponName)}.png" alt="" draggable="false">` +
+    `<span class="bs-weapon-name">${escapeHtml(weaponName)}</span>`;
+  const image = cell.querySelector(".bs-weapon-image");
+  image.onerror = function(){
+    this.insertAdjacentHTML("afterend", BLANK);
+    this.remove();
+  };
+  if(onClick) cell.addEventListener("click", onClick);
+  return cell;
+}
 function battleshipGridEl(size){
   const grid = document.createElement("div");
   grid.className = "bs-grid";
   grid.style.setProperty("--bs-size", size);
   return grid;
+}
+// Item 5: "r,c" -> {shipIndex, position, orientation} for every cell of every ship on this side —
+// position/orientation drive both the continuous-pill border-radius and the bow-direction icon, so
+// two ships placed touching each other read as visually distinct, unbroken shapes rather than a
+// row of identical anchor icons.
+function battleshipShipMeta(ships){
+  const meta = new Map();
+  (ships || []).forEach((ship, shipIndex) => {
+    const cells = ship.cells;
+    const orientation = cells.length < 2 ? "single" : (cells[0][0] === cells[1][0] ? "h" : "v");
+    cells.forEach(([r, c], i) => {
+      const position = cells.length < 2 ? "single" : (i === 0 ? "start" : (i === cells.length - 1 ? "end" : "mid"));
+      meta.set(`${r},${c}`, {shipIndex, position, orientation});
+    });
+  });
+  return meta;
+}
+function battleshipShipCellVisual(info){
+  const R = "10px";
+  let radius = "0";
+  if(info.position === "single") radius = R;
+  else if(info.orientation === "h") radius = info.position === "start" ? `${R} 0 0 ${R}` : info.position === "end" ? `0 ${R} ${R} 0` : "0";
+  else radius = info.position === "start" ? `${R} ${R} 0 0` : info.position === "end" ? `0 0 ${R} ${R}` : "0";
+  // Bow icon only at the ship's true front (its start cell, or the whole ship for a single-cell
+  // Sub) — pointing in its orientation's direction, so the shape alone tells you which way it runs
+  // even before you spot the pill outline.
+  const showBow = info.position === "start" || info.position === "single";
+  const icon = showBow ? (info.orientation === "h" ? "▶" : info.orientation === "v" ? "▼" : "⚓") : "";
+  const tintClass = info.shipIndex % 2 === 0 ? "bs-ship-a" : "bs-ship-b";
+  return {radius, icon, tintClass};
+}
+function makeBattleshipShipCell(info, onClick){
+  const visual = battleshipShipCellVisual(info);
+  const cell = makeBattleshipCell(visual.icon, visual.tintClass, onClick, onClick ? "Tap to pick up this ship" : null);
+  cell.style.borderRadius = visual.radius;
+  return cell;
+}
+// Shared by the battle phase's own "My Fleet" column and the spectator stack (item 9) — one side's
+// ship layout (only when revealShips is true) with the OPPONENT's hits/misses against it overlaid.
+// revealShips:false renders exactly the Attack-Grid visual (hits/misses only, no ship shapes ever
+// showing through on an unattacked cell) — spectator_visibility:"progress"'s whole point.
+function battleshipFleetGridEl(side, revealShips, size){
+  const ships = (activeRound.ships || {})[side] || [];
+  const attacksOnThem = (activeRound.attacks || {})[battleshipOppositeSide(side)] || {};
+  const shipMeta = revealShips ? battleshipShipMeta(ships) : new Map();
+  const grid = battleshipGridEl(size);
+  for(let r = 0; r < size; r++){
+    for(let c = 0; c < size; c++){
+      const key = `${r},${c}`;
+      const rec = attacksOnThem[key];
+      if(rec && rec.hit){ grid.appendChild(makeBattleshipCell("💥", "bs-hit", null)); continue; }
+      if(rec){ grid.appendChild(makeBattleshipCell("·", "bs-miss", null)); continue; }
+      const info = shipMeta.get(key);
+      if(info){ grid.appendChild(makeBattleshipShipCell(info, null)); continue; }
+      grid.appendChild(makeBattleshipCell("", "", null));
+    }
+  }
+  return grid;
+}
+// Item 7: hover ghost preview, non-touch devices only — touch has no hover state to preview with,
+// and tap-to-place already gives immediate feedback there (a failed placement just toasts).
+function supportsBattleshipHoverPreview(){
+  return Boolean(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+}
+function battleshipClearPreview(cellEls){
+  cellEls.forEach(row => row.forEach(el => el && el.classList.remove("bs-preview-valid", "bs-preview-invalid")));
+}
+function battleshipShowPreview(cellEls, startRow, startCol, size){
+  const mySide = myTeamId();
+  const existing = (activeRound.ships || {})[mySide] || [];
+  const cells = battleshipShipCells(battleshipPendingLength, startRow, startCol, battleshipOrientation, size);
+  const valid = Boolean(cells) && !battleshipCellsOverlap(cells, existing);
+  const cls = valid ? "bs-preview-valid" : "bs-preview-invalid";
+  (cells || [[startRow, startCol]]).forEach(([r, c]) => { if(cellEls[r] && cellEls[r][c]) cellEls[r][c].classList.add(cls); });
 }
 // Placement phase: my own grid only (spec — each side sees ONLY their own grid here). Tapping an
 // already-placed ship's cell removes that whole ship; otherwise tapping places whichever ship is
@@ -4049,7 +4304,7 @@ function renderBattleshipPlacementBoard(mySide, size){
     const orientBtn = document.createElement("button");
     orientBtn.type = "button";
     orientBtn.className = "bs-orient-btn";
-    orientBtn.textContent = battleshipOrientation === "h" ? "Orientation: Horizontal" : "Orientation: Vertical";
+    orientBtn.innerHTML = (battleshipOrientation === "h" ? "Orientation: Horizontal" : "Orientation: Vertical") + '<span class="bs-orient-key">(or press R)</span>';
     orientBtn.addEventListener("click", () => { battleshipOrientation = battleshipOrientation === "h" ? "v" : "h"; renderAll(); });
     palette.appendChild(orientBtn);
     if(remaining.length){
@@ -4073,18 +4328,29 @@ function renderBattleshipPlacementBoard(mySide, size){
   wrap.appendChild(palette);
 
   const grid = battleshipGridEl(size);
-  const cellShip = new Map(); // "r,c" -> ship index, for click-to-remove
-  ships.forEach((ship, i) => ship.cells.forEach(([r,c]) => cellShip.set(`${r},${c}`, i)));
+  const shipMeta = battleshipShipMeta(ships);
+  // Item 7: every cell element kept by [row][col] so a hover preview can reach across the whole
+  // grid (a ship can span multiple cells from wherever the pointer currently sits), not just the
+  // one cell under the pointer.
+  const cellEls = Array.from({length:size}, () => new Array(size));
+  const hoverable = !locked && battleshipPendingLength && supportsBattleshipHoverPreview();
   for(let r = 0; r < size; r++){
     for(let c = 0; c < size; c++){
       const key = `${r},${c}`;
-      const shipIndex = cellShip.get(key);
-      if(shipIndex !== undefined){
-        grid.appendChild(makeBattleshipCell("⚓", "bs-ship", locked ? null : () => removeBattleshipShip(shipIndex), "Tap to remove this ship"));
+      const info = shipMeta.get(key);
+      let cell;
+      if(info){
+        cell = makeBattleshipShipCell(info, locked ? null : () => pickUpBattleshipShip(info.shipIndex));
       } else {
         const onClick = (!locked && battleshipPendingLength) ? () => placeBattleshipShip(battleshipPendingLength, r, c) : null;
-        grid.appendChild(makeBattleshipCell("", "", onClick));
+        cell = makeBattleshipCell("", "", onClick);
+        if(hoverable){
+          cell.addEventListener("mouseenter", () => battleshipShowPreview(cellEls, r, c, size));
+          cell.addEventListener("mouseleave", () => battleshipClearPreview(cellEls));
+        }
       }
+      cellEls[r][c] = cell;
+      grid.appendChild(cell);
     }
   }
   wrap.appendChild(grid);
@@ -4125,28 +4391,11 @@ function renderBattleshipPlacementBoard(mySide, size){
 function renderBattleshipBattleBoard(mySide, size){
   const wrap = document.createElement("div");
   wrap.className = "bs-battle-boards";
-  const oppSide = battleshipOppositeSide(mySide);
-
-  const myShips = (activeRound.ships || {})[mySide] || [];
-  const theirAttacksOnMe = (activeRound.attacks || {})[oppSide] || {};
-  const myShipCells = new Set();
-  myShips.forEach(ship => ship.cells.forEach(([r,c]) => myShipCells.add(`${r},${c}`)));
 
   const fleetCol = document.createElement("div");
   fleetCol.className = "bs-board-col";
   fleetCol.innerHTML = `<div class="bs-board-label">My Fleet</div>`;
-  const fleetGrid = battleshipGridEl(size);
-  for(let r = 0; r < size; r++){
-    for(let c = 0; c < size; c++){
-      const key = `${r},${c}`;
-      const isShip = myShipCells.has(key);
-      const rec = theirAttacksOnMe[key];
-      if(rec && rec.hit) fleetGrid.appendChild(makeBattleshipCell("💥", "bs-hit", null));
-      else if(rec) fleetGrid.appendChild(makeBattleshipCell("·", "bs-miss", null));
-      else fleetGrid.appendChild(makeBattleshipCell(isShip ? "⚓" : "", isShip ? "bs-ship" : "", null));
-    }
-  }
-  fleetCol.appendChild(fleetGrid);
+  fleetCol.appendChild(battleshipFleetGridEl(mySide, true, size));
   wrap.appendChild(fleetCol);
 
   const myAttacks = (activeRound.attacks || {})[mySide] || {};
@@ -4164,10 +4413,12 @@ function renderBattleshipBattleBoard(mySide, size){
       else{
         // A cell can end up with no mapped weapon at all if too many weapons are excluded to fill
         // every cell (battleshipWeaponPool() falls back to whatever's left, under size*size) —
-        // leave it genuinely unclickable rather than a dead click with no feedback.
+        // leave it genuinely unclickable rather than a dead click with no feedback, and don't ask
+        // makeBattleshipWeaponCell to render a nonexistent weapon's image/caption.
         const weapon = battleshipWeaponAt(activeRound, r, c);
-        const onClick = (canAttack && weapon) ? () => attemptBattleshipAttack(r, c) : null;
-        attackGrid.appendChild(makeBattleshipCell(weapon || "", "bs-unknown", onClick, weapon || ""));
+        attackGrid.appendChild(weapon
+          ? makeBattleshipWeaponCell(weapon, canAttack ? () => attemptBattleshipAttack(r, c) : null)
+          : makeBattleshipCell("", "bs-unknown", null));
       }
     }
   }
@@ -4175,26 +4426,25 @@ function renderBattleshipBattleBoard(mySide, size){
   wrap.appendChild(attackCol);
   return wrap;
 }
-// Phase 1 spectator view: no ship-shape spoilers for either side (fleet layouts stay hidden), just
-// each side's own attack progress (hit/miss counts) — a simple read-only summary rather than a
-// full attack-grid render, matching this phase's "functional, not pretty" scope. Not covered by the
-// spectator ticket that shipped spectator_visibility for Grid Bingo/TTT, so this is a judgment call.
-function renderBattleshipSpectatorSummary(size){
+// Item 9: real board views for both sides, stacked vertically (not side by side like
+// renderSpectatorBoards() uses for Grid Bingo/TTT — spec calls for stacked here specifically).
+// Shares battleshipFleetGridEl() with the battle phase's own "My Fleet" column: spectator_visibility
+// "full" reveals ship shapes (revealShips:true, same visual a side sees of its own fleet);
+// "progress" never does (revealShips:false — hits/misses only, exactly the Attack-Grid look, no
+// ship shapes underneath even on an unattacked cell).
+function renderBattleshipSpectatorBoards(size){
   const wrap = document.createElement("div");
-  wrap.className = "bs-spectator-summary";
+  wrap.className = "bs-spectator-stack";
+  const revealShips = activeRound.spectator_visibility === "full";
   ["team-A", "team-B"].forEach(side => {
     const entry = roundEntries.find(e => e.player_id === side);
-    const attacks = Object.values((activeRound.attacks || {})[side] || {});
-    const hits = attacks.filter(a => a && a.hit).length;
-    const ships = (activeRound.ships || {})[side] || [];
-    const oppAttacks = (activeRound.attacks || {})[battleshipOppositeSide(side)] || {};
-    const shipsSunk = ships.filter(ship => ship.cells.every(([r,c]) => oppAttacks[`${r},${c}`]?.hit)).length;
-    const row = document.createElement("div");
-    row.className = "bs-spectator-row";
-    row.innerHTML = `<div class="nm">${escapeHtml(entry?.player_name || side)}</div>` +
-      `<div>${attacks.length} attacks · ${hits} hits</div>` +
-      `<div>${shipsSunk} / ${ships.length || (activeRound.fleet || []).length} ships sunk</div>`;
-    wrap.appendChild(row);
+    const col = document.createElement("div");
+    const label = document.createElement("div");
+    label.className = "bs-spectator-side-label";
+    label.textContent = entry?.player_name || side;
+    col.appendChild(label);
+    col.appendChild(battleshipFleetGridEl(side, revealShips, size));
+    wrap.appendChild(col);
   });
   return wrap;
 }
@@ -4239,7 +4489,7 @@ function renderBattleshipRound(){
   status.innerHTML = `<div class="settings-line">${escapeHtml(settingsLine)}</div><div>${resultLine}</div>${spectatorLine}`;
 
   if(spectating){
-    document.getElementById("board").replaceChildren(renderBattleshipSpectatorSummary(size));
+    document.getElementById("board").replaceChildren(renderBattleshipSpectatorBoards(size));
     return;
   }
   if(!mySide){ document.getElementById("board").replaceChildren(); return; }
@@ -4684,6 +4934,19 @@ document.addEventListener("visibilitychange", async () => {
   await syncNow();
   renderAll();
 });
+// Item 6: "R" toggles ship orientation while a ship is selected for placement — same effect as the
+// on-screen orient button, just faster once you're used to it. Guarded to only fire while
+// Battleship placement is actually the thing on screen with a ship queued, and never while the
+// user is typing into some unrelated input (room code, chat-adjacent fields, etc.).
+document.addEventListener("keydown", e => {
+  if(e.key !== "r" && e.key !== "R") return;
+  if(!activeRound || activeRound.game_type !== "battleship" || activeRound.phase !== "placement" || activeRound.ended_at) return;
+  if(!battleshipPendingLength || isSpectator()) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if(tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  battleshipOrientation = battleshipOrientation === "h" ? "v" : "h";
+  renderAll();
+});
 window.addEventListener("focus", async () => {
   if(!me) return;
   await syncNow();
@@ -4895,6 +5158,17 @@ document.getElementById("closeWeaponDifficultyBtn").addEventListener("click", ()
 });
 document.getElementById("closeWeaponDifficultyBtnTop").addEventListener("click", () => {
   document.getElementById("weaponDifficultyModal").classList.remove("show");
+});
+// How to Play: pure static content, no fetch — works identically in or out of a room since it
+// never touches activeRound/roundEntries.
+document.getElementById("howToPlayBtn").addEventListener("click", () => {
+  document.getElementById("howToPlayModal").classList.add("show");
+});
+document.getElementById("closeHowToPlayBtn").addEventListener("click", () => {
+  document.getElementById("howToPlayModal").classList.remove("show");
+});
+document.getElementById("closeHowToPlayBtnTop").addEventListener("click", () => {
+  document.getElementById("howToPlayModal").classList.remove("show");
 });
 
 /* ============================ settings ============================ */
