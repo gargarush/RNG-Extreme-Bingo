@@ -64,11 +64,15 @@
   .dot{width:7px;height:7px;border-radius:50%;background:var(--utility);flex-shrink:0;}
   .dot.stale{background:var(--primary);}
   .dot.dead{background:var(--melee);}
-  .sync button{
+  .refresh-btn{
     background:none;border:1px solid var(--panel-line);color:var(--dim);
     border-radius:7px;padding:5px 11px;font-size:12px;cursor:pointer;font-family:inherit;
   }
-  .sync button:hover{border-color:var(--mark);color:var(--ink);}
+  .refresh-btn:hover{border-color:var(--mark);color:var(--ink);}
+  /* Immediate loading feedback (item 3) — disabled state doubles as the "in flight" look for both
+     the in-room Refresh button and the join-screen one below, so there's never a gap between click
+     and visible response. */
+  .refresh-btn:disabled{opacity:.55;cursor:not-allowed;}
 
   .roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:8px;}
   .player{
@@ -449,6 +453,11 @@
 
   .public-rooms-section{border-top:1px solid var(--panel-line);padding-top:12px;}
   .public-rooms-head{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-bottom:8px;}
+  /* item 2: only the "Public rooms" head needs the refresh button next to it — "Your history"
+     below reuses the same .public-rooms-head class bare, so the row wrapper (not the class itself)
+     carries the button layout and cancels out the head's own margin to avoid doubling it. */
+  .public-rooms-head-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
+  .public-rooms-head-row .public-rooms-head{margin-bottom:0;}
   .public-rooms-list{display:flex;flex-direction:column;gap:8px;}
   .public-rooms-list .empty{font-size:12.5px;color:var(--dim);}
   .personal-history-inline{border-top:1px solid var(--panel-line);padding-top:12px;margin-top:12px;}
@@ -511,7 +520,7 @@
     <div class="sync">
       <span class="dot" id="syncDot"></span>
       <span id="syncTime">Connecting</span>
-      <button id="refreshBtn">Refresh</button>
+      <button id="refreshBtn" class="refresh-btn">Refresh</button>
     </div>
   </div>
   <div class="roster" id="roster"></div>
@@ -557,7 +566,9 @@
     </div>
     <div class="inline-err" id="inlineRoomErr"></div>
     <div class="public-rooms-section">
-      <div class="public-rooms-head">Public rooms</div>
+      <!-- item 2: refreshes both this list and the inline history dashboard below in one trip —
+           see the click handler near the bottom of the script. -->
+      <div class="public-rooms-head-row"><div class="public-rooms-head">Public rooms</div><button type="button" id="publicRoomsRefreshBtn" class="refresh-btn">Refresh</button></div>
       <div class="public-rooms-list" id="publicRoomsList"></div>
     </div>
     <!-- item 4: the same Personal History content as #historyModal below, rendered inline instead
