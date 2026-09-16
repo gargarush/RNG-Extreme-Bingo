@@ -90,6 +90,9 @@
   .player .nm{font-weight:700;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .player .ct{font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums;flex-shrink:0;}
   .player .you{font-size:10px;color:var(--mark);font-weight:700;letter-spacing:.05em;margin-top:2px;}
+  /* Idle toggle (item 3) — same small-caps badge treatment as .you, distinct color so the two are
+     never confused when someone is both "you" and idle at once. */
+  .player .idle-badge{font-size:10px;color:var(--dim);font-weight:700;letter-spacing:.05em;margin-top:2px;}
   .player .kill{
     position:absolute;top:8px;right:8px;background:none;border:none;color:var(--panel-line);
     font-size:15px;line-height:1;cursor:pointer;padding:3px 5px;border-radius:5px;font-family:inherit;
@@ -266,6 +269,9 @@
   .bs-cell:disabled{cursor:default;}
   .bs-cell .bs-weapon-image{width:100%;height:100%;object-fit:contain;padding:6px 5px 16px;}
   .bs-cell .bs-weapon-name{position:absolute;bottom:3px;left:0;right:0;text-align:center;font-size:9px;color:var(--dim);padding:0 3px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* Checklist hit/miss overlay — dims the weapon image underneath so the glyph reads clearly on
+     top, same idea as .tile.done's own stamp overlay. */
+  .bs-cell .bs-outcome-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;background:rgba(12,7,20,.45);pointer-events:none;}
   .bs-cell svg{width:55%;height:55%;color:var(--panel-line);}
   /* Distinguishable ships (item 5): alternating tint by ship index — border-radius is set inline
      per cell (battleshipShipCellVisual()) so only a ship's true start/end reads as rounded, with
@@ -279,13 +285,34 @@
   .bs-cell.bs-preview-valid{background:rgba(77,255,166,.32) !important;border-color:var(--utility) !important;}
   .bs-cell.bs-preview-invalid{background:rgba(255,77,106,.32) !important;border-color:var(--melee) !important;}
   .bs-battle-boards{display:flex;gap:20px;flex-wrap:wrap;}
-  .bs-board-col{flex:1 1 260px;min-width:220px;}
+  /* Root cause of the tile-size picker "doing nothing" during battle (item 1, verified against a
+     real rendered page, not just source reading): flex:1 1 260px let this column GROW to evenly
+     share the row with its sibling, landing around ~490px on a 1000px page — since .bs-grid's own
+     width is `auto` capped only by max-width, a column NARROWER than that calc'd max-width becomes
+     the grid's actual rendered width outright, regardless of what --tile-min computes. --bs-size/
+     --tile-min were resolving correctly the whole time (confirmed via computed style at each
+     setting); the column's own width was the silent, unrelated bottleneck overriding them. Fix:
+     give the column an explicit, non-flexing width using the SAME formula .bs-grid's own max-width
+     already uses (needs --bs-size set here too, not just on .bs-grid, since custom properties don't
+     flow upward to a parent) — flex-wrap on .bs-battle-boards then stacks the two boards vertically
+     once they genuinely can't both fit at the current tile size, instead of silently shrinking them. */
+  .bs-board-col{flex:0 0 auto;width:calc(var(--bs-size) * var(--tile-min) + (var(--bs-size) - 1) * 8px);}
   .bs-board-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:8px;}
   .bs-ready-row{margin-top:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;}
   .bs-ready-row button{background:none;border:1px solid var(--panel-line);color:var(--dim);border-radius:7px;padding:7px 14px;font-size:13px;cursor:pointer;font-family:inherit;}
   .bs-ready-row button.primary{background:var(--mark);border-color:var(--mark);color:#0c1420;font-weight:700;}
   .bs-ready-row button.primary:disabled{opacity:.45;cursor:not-allowed;}
   .bs-ready-status{font-size:12px;color:var(--dim);}
+  /* Free-choice weapon checklist — not an NxN spatial grid like .bs-grid (grid_size²+5 items,
+     shuffled, no coordinates), so it gets its own auto-fill sizing rather than the --bs-size-driven
+     one. Reuses .bs-cell's own weapon-image layout via makeBattleshipWeaponCell(). */
+  .bs-checklist{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;}
+  .bs-cell.bs-wasted{opacity:.4;filter:grayscale(1);}
+  .bs-cell.bs-wasted .bs-weapon-name{text-decoration:line-through;}
+  .bs-cell.bs-armed{border-color:var(--mark);box-shadow:0 0 0 2px var(--mark-soft);}
+  .bs-picker-controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
+  .bs-picker-controls button{background:none;border:1px solid var(--panel-line);color:var(--dim);border-radius:7px;padding:8px 14px;font-size:13px;cursor:pointer;font-family:inherit;}
+  .bs-picker-controls button.primary{background:var(--mark);border-color:var(--mark);color:#0c1420;font-weight:700;}
   /* Stacked spectator boards (item 9) — vertical, not side by side like renderSpectatorBoards()
      uses for Grid Bingo/TTT, per spec. */
   .bs-spectator-stack{display:flex;flex-direction:column;gap:24px;}
@@ -609,6 +636,7 @@
   <div class="room-bar" id="roomBar">
     <span>Room <strong id="roomCodeLabel"></strong></span>
     <div class="room-actions">
+      <button id="toggleIdleBtn" type="button">Go Idle</button>
       <button id="togglePublicBtn" type="button">Make public</button>
       <button id="copyRoomLink" type="button">Copy invite link</button>
       <button id="leaveRoomBtn" class="leave-room" type="button">Leave Room</button>
@@ -1078,7 +1106,7 @@ const Store = {
     if(!roomCode) return {};
     // One request, embedding profiles() via PostgREST's FK-based embedding — not a separate
     // profile lookup per player (item 6).
-    const res = await fetch(`${REMOTE.url}/rest/v1/boards?select=user_id,joined_at,profiles(username,display_name,accent,tile_size,muted,page_zoom)&room_code=eq.${encodeURIComponent(roomCode)}`, {
+    const res = await fetch(`${REMOTE.url}/rest/v1/boards?select=user_id,joined_at,idle,profiles(username,display_name,accent,tile_size,muted,page_zoom)&room_code=eq.${encodeURIComponent(roomCode)}`, {
       headers:authHeaders()
     });
     if(!res.ok) throw new Error("list failed " + res.status);
@@ -1093,10 +1121,21 @@ const Store = {
         tileSize:p.tile_size || null,
         muted:Boolean(p.muted),
         pageZoom:Number(p.page_zoom) || 100,
-        joinedAt:Number(r.joined_at) || 0
+        joinedAt:Number(r.joined_at) || 0,
+        idle:Boolean(r.idle)
       };
     });
     return out;
+  },
+  // Idle toggle (item 3) — a plain PATCH on this user's own presence row, same shape as
+  // leaveRoomPresence's scoping (user_id alone; a user only ever has one active room's row).
+  async setIdle(userId, idle){
+    const res = await fetch(`${REMOTE.url}/rest/v1/boards?user_id=eq.${encodeURIComponent(userId)}`, {
+      method:"PATCH",
+      headers:authHeaders({"Content-Type":"application/json", Prefer:"return=minimal"}),
+      body:JSON.stringify({idle})
+    });
+    if(!res.ok) throw new Error("idle toggle failed " + res.status);
   },
   // Joining = insert a presence row. Deletes any existing row for this user first — a user should
   // only ever be present in one room at a time, regardless of what the table's own constraints allow.
@@ -1364,10 +1403,11 @@ const Store = {
     if(!res.ok) throw new Error("ready save failed " + res.status);
   },
   // Safe to call optimistically after every single ready-confirm (item spec) — re-checks live
-  // presence itself and only actually transitions phase/generates weapon_map once both sides are
-  // fully confirmed, no-opping harmlessly otherwise. Returns the resulting weapon_map (or the
-  // round's current one if it already finalized/no-op'd) — the caller should still syncNow()
-  // afterward rather than trust this return value blindly, same caution claimSquare() uses.
+  // presence itself and only actually transitions phase/generates each side's weapon_list once both
+  // sides are fully confirmed, no-opping harmlessly otherwise (same trigger as before the free-
+  // choice checklist replaced the old fixed coordinate mapping — this call itself is unchanged).
+  // The caller should still syncNow() afterward rather than trust this return value blindly, same
+  // caution claimSquare() uses.
   async finalizeBattleshipPlacement(roundId, weaponPool){
     const {data, error} = await sbClient.rpc("try_finalize_placement", {
       p_round_id: roundId, p_weapon_pool: weaponPool
@@ -1375,14 +1415,16 @@ const Store = {
     if(error) throw new Error("placement finalize failed: " + error.message);
     return data;
   },
-  // Returns {hit, sunk, attacks} on a genuine new resolution — attacks there is scoped to just the
-  // ATTACKING side's own attack history. Re-attacking an already-resolved coordinate is a silent
-  // no-op per the function itself, but structurally different on the wire: it returns the round's
-  // whole attacks column ({side: {...}, ...}) instead, with no hit/sunk keys at all — callers must
-  // check `"hit" in result` before trusting hit/sunk, never assume the shape.
-  async resolveBattleshipAttack(roundId, attackingSide, row, col, weapon){
-    const {data, error} = await sbClient.rpc("resolve_attack", {
-      p_round_id: roundId, p_attacking_side: attackingSide, p_row: row, p_col: col, p_weapon: weapon
+  // Free-choice weapon checklist (replaces the old fixed coordinate-mapping resolve_attack): a
+  // weapon is spent either way this is called — wasted:true for a cancelled pick (row/col are
+  // unused server-side then; 0,0 is just a placeholder) or a real target. Three distinct response
+  // shapes: {hit,sunk,attacks} on a genuine new resolution, {wasted:true} on a confirmed cancel,
+  // {already_used:true} when the weapon (or, in a same-side-teammate race, the target square) was
+  // already spent by the time this landed — callers must check for already_used before trusting
+  // anything else in the response, same defensive shape the old claim/attack RPCs already used.
+  async resolveFreeAttack(roundId, side, weapon, row, col, wasted){
+    const {data, error} = await sbClient.rpc("resolve_free_attack", {
+      p_round_id: roundId, p_side: side, p_weapon: weapon, p_row: row, p_col: col, p_wasted: wasted
     });
     if(error) throw new Error("attack failed: " + error.message);
     return data;
@@ -1539,6 +1581,10 @@ const SHIP_NAMES = {1:"Sub", 2:"Destroyer", 3:"Cruiser", 4:"Battleship"};
 // which orientation a tap-to-place will use. Reset whenever a fresh placement phase starts.
 let battleshipPendingLength = null;
 let battleshipOrientation = "h";
+// Free-choice weapon checklist UI state (also local-only, never persisted) — which weapon's
+// target-picker is currently open, and which square within it is currently armed/highlighted.
+let battleshipArmedWeapon = null;
+let battleshipArmedTarget = null;
 // Step 2 of the difficulty system: shared by every Game Mode (unlike gridBingoConfig/tttConfig,
 // which are per-mode), since exclusion/hard-cap/free-square all apply identically across Grid,
 // All, and Tic-Tac-Toe per the ticket.
@@ -1645,10 +1691,16 @@ function applyHardCap(picked, maxHard, pool){
   if(!maxHard) return picked;
   const hardPositions = picked.map((name, i) => isHardWeapon(name) ? i : -1).filter(i => i >= 0);
   if(hardPositions.length <= maxHard) return picked;
+  // Chance-based target (item 4): trimming down to EXACTLY maxHard every time the natural draw
+  // exceeded it made the real count too predictable under "reveal as they mark" — once a player
+  // had seen maxHard hard weapons already revealed, that reliably meant there were no more. A
+  // random target between 0 and maxHard inclusive keeps maxHard a true ceiling (the count can
+  // never exceed it) while the actual resulting count now varies round to round.
+  const target = Math.floor(Math.random() * (maxHard + 1));
   const out = picked.slice();
   const onCard = new Set(out);
   const replacements = shuffle(pool.filter(name => !isHardWeapon(name) && !onCard.has(name)));
-  shuffle(hardPositions).slice(0, hardPositions.length - maxHard).forEach((pos, k) => {
+  shuffle(hardPositions).slice(0, hardPositions.length - target).forEach((pos, k) => {
     if(replacements[k] === undefined) return;
     onCard.delete(out[pos]);
     out[pos] = replacements[k];
@@ -1662,19 +1714,18 @@ function makeRoundCard(size, sharedCard, excludedWeapons, maxHardWeapons){
   return applyHardCap(shuffle(pool).slice(0, size * size), maxHardWeapons, pool);
 }
 function fullCard(excludedWeapons){ return weaponPool(excludedWeapons); }
-// Battleship (Phase 1): the exact same weaponPool()+shuffle+slice+applyHardCap pipeline
-// makeRoundCard() already uses for a Grid Bingo card, sized to the round's own grid cell count —
-// NOT the raw, uncapped weaponPool() output. This matters more than it looks: try_finalize_placement
-// assigns every weapon in the pool a unique index by simply shuffling 0..(pool.length-1), with no
-// awareness of grid_size at all — verified live against the real RPC. Pass it anything longer than
-// size*size and some weapons decode to out-of-bounds row/col; pass exactly size*size and every
-// index is guaranteed to land in-bounds with full 1-to-1 cell coverage. Reads the ROUND's own
-// stored excluded_weapons/max_hard_weapons (baked in at creation, same as every other mode), not
-// whatever the current player's live cardFilterConfig happens to hold right now.
+// Free-choice weapon checklist: each side's own weapon_list is grid_size² + 5 weapons (spec), not
+// grid_size² — the old exactly-size*size sizing was specifically to keep the now-retired fixed
+// coordinate mapping's indices in-bounds (verified live against that RPC in an earlier round); the
+// free-choice checklist has no spatial mapping at all anymore, so that constraint no longer
+// applies, but the spec's own "+5" headroom is still honored here rather than reverting to the raw,
+// uncapped weaponPool() output. Reads the ROUND's own stored excluded_weapons/max_hard_weapons
+// (baked in at creation, same as every other mode), not whatever the current player's live
+// cardFilterConfig happens to hold right now.
 function battleshipWeaponPool(round){
   const size = Number(round.grid_size);
   const pool = weaponPool(round.excluded_weapons);
-  return applyHardCap(shuffle(pool).slice(0, size * size), round.max_hard_weapons, pool);
+  return applyHardCap(shuffle(pool).slice(0, size * size + 5), round.max_hard_weapons, pool);
 }
 // Step 2, item 3: picks the free/wildcard square from the card's OWN weapon list (never a special
 // placeholder tile) — same mechanism as the existing team handicap pre-marks (marks/marked_by set
@@ -2205,7 +2256,7 @@ async function syncNow(){
     // Battleship safety net (same "derive don't rely on one client" principle as Tic-Tac-Toe's
     // above): every client re-checks whether the whole enemy fleet is sunk on every sync. Scores
     // themselves don't need a redundant recompute here on every single poll tick — every real
-    // attack already pushes a fresh recompute for both sides via its own attemptBattleshipAttack()
+    // attack already pushes a fresh recompute for both sides via its own performBattleshipFreeAttack()
     // call (see syncBattleshipScores there) — this only re-syncs them once, at the one moment this
     // safety net actually matters: the round JUST transitioning to ended here (so the winning
     // side's final +250 lands even if the attacking client's own follow-up call got interrupted).
@@ -2500,6 +2551,9 @@ function renderRoomBar(){
   bar.classList.toggle("show", Boolean(room));
   document.getElementById("roomCodeLabel").textContent = room || "";
   document.getElementById("togglePublicBtn").textContent = roomIsPublic ? "Make room private" : "Make public";
+  // Idle toggle (item 3): reflects MY OWN presence row's idle flag specifically — boards[me.id]
+  // is kept in sync by syncNow()'s normal listBoards() refresh, same as every other per-player field.
+  document.getElementById("toggleIdleBtn").textContent = boards[me.id]?.idle ? "I'm Back" : "Go Idle";
 }
 
 // Tile size only matters while looking at a round's grid now — no more default 43-weapon
@@ -2809,6 +2863,17 @@ function buildBingoOptions(id, options, selected, onChange){
 // untouched solo/individual config that already existed.
 const TEAM_SIZE_THRESHOLD = 2;
 function isTeamRoomSize(members){ return members.length > TEAM_SIZE_THRESHOLD; }
+// Idle toggle (item 3): everyone present in boards, minus anyone who's gone idle — the single
+// source every round-formation call site (team/non-team split, manual-assign UI, the "need at
+// least 2 people" gate) now reads from instead of Object.entries(boards) directly, so an idle
+// member is uniformly absent from all of them at once rather than needing a filter re-applied at
+// each call site individually. Room-wide presence display (renderRoster) and the per-round roster
+// (computeRoster, which already treats anyone present but unassigned as a spectator) deliberately
+// keep reading the raw, unfiltered boards — idle members still show there, just marked idle/as a
+// spectator, never hidden from the room itself.
+function activeRoomMembers(){
+  return Object.entries(boards).filter(([, board]) => !board.idle);
+}
 
 // Generalized over a `config` object (Tic Tac Toe: item shared UI) — Grid Bingo passes
 // gridBingoConfig, Tic Tac Toe passes its own tttConfig, so choosing a manual team for one game
@@ -2870,7 +2935,7 @@ function roundGameMode(round){
 // already branch on. "Tic-Tac-Toe" swaps in tttConfig's own fields. Grid size and team formation
 // are shared rows bound to whichever config object is active, rather than duplicated per mode.
 function buildStartRoundConfig(){
-  const members = Object.entries(boards);
+  const members = activeRoomMembers();
   const isTeamMode = isTeamRoomSize(members);
   const isTTT = configGameMode === "tictactoe";
   const isAll = configGameMode === "all";
@@ -2934,7 +2999,7 @@ function buildStartRoundConfig(){
   // Max Hard Weapons (step 2, item 2): only worth showing once at least one weapon is actually
   // tagged "hard" — otherwise the control has nothing to do. Hidden for "All" mode by definition
   // (it uses the full remaining pool, no per-card draw to cap). Battleship reuses this same
-  // hard-cap logic when it builds its own weapon_map (battleshipWeaponPool()), so it stays visible.
+  // hard-cap logic when it builds its own weapon_list (battleshipWeaponPool()), so it stays visible.
   const anyHardTagged = Object.values(weaponDifficulty).some(d => d === "hard");
   document.getElementById("maxHardWeaponsRow").style.display = (anyHardTagged && !isAll) ? "" : "none";
   if(anyHardTagged && !isAll){
@@ -2993,7 +3058,7 @@ function buildStartRoundConfig(){
 // logic for a "team" of 1 — there's nothing to configure when there's only one possible split.
 async function startTicTacToe(){
   const roundId = crypto.randomUUID ? crypto.randomUUID() : "round-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
-  const members = Object.entries(boards);
+  const members = activeRoomMembers();
   const size = Number(tttConfig.gridSize);
   // no repeats, filtered weapon pool, hard-capped — same mechanism as Grid Bingo (step 2)
   const sharedCard = makeRoundCard(size, null, cardFilterConfig.excludedWeapons, cardFilterConfig.maxHardWeapons);
@@ -3098,7 +3163,7 @@ function battleshipFleetForSide(round, side){
 // empty; phase starts at 'placement' and only try_finalize_placement() ever flips it to 'battle'.
 async function startBattleship(){
   const roundId = crypto.randomUUID ? crypto.randomUUID() : "round-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
-  const members = Object.entries(boards);
+  const members = activeRoomMembers();
   const size = Number(battleshipConfig.gridSize);
   const teams = isTeamRoomSize(members)
     ? buildTeams(members, battleshipConfig)
@@ -3142,6 +3207,8 @@ async function startBattleship(){
   await Store.createRound(round, entries);
   battleshipPendingLength = null;
   battleshipOrientation = "h";
+  battleshipArmedWeapon = null;
+  battleshipArmedTarget = null;
   await syncNow();
   renderAll();
 }
@@ -3219,7 +3286,7 @@ async function startTeamGridBingo(roundId, members){
 
 async function startGridBingo(){
   const roundId = crypto.randomUUID ? crypto.randomUUID() : "round-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
-  const members = Object.entries(boards);
+  const members = activeRoomMembers();
   if(isTeamRoomSize(members)){
     await startTeamGridBingo(roundId, members);
     await syncNow();
@@ -3742,35 +3809,58 @@ async function cancelBattleshipReady(){
   activeRound = {...activeRound, ready:nextReady};
   renderAll();
 }
-function battleshipWeaponAt(round, row, col){
-  const size = Number(round.grid_size);
-  const idx = row * size + col;
-  const map = round.weapon_map || {};
-  return Object.keys(map).find(name => map[name] === idx) || null;
-}
-// Item 1: every attack (not just a winning one) is now confirmed first — grids sit close together
-// and a misclick is easy to make. Reuses the existing showFinishConfirm modal already parametrized
-// for this (title/message/confirmLabel), same as the win-confirm/mark-and-finish flows elsewhere.
-function attemptBattleshipAttack(row, col){
+// Free-choice weapon checklist (replaces the old fixed coordinate mapping): tapping an unused
+// weapon in the checklist opens its target-picker; battleshipArmedTarget tracks which square is
+// currently highlighted within it (re-tapping a different square just moves the arm — see the
+// judgment-call note on renderBattleshipTargetPicker). Both reset on every fresh round start.
+function attemptBattleshipChecklistWeapon(weapon){
   const mySide = myTeamId();
   if(!mySide || !activeRound || activeRound.phase !== "battle" || activeRound.ended_at) return;
-  if(((activeRound.attacks || {})[mySide] || {})[`${row},${col}`]) return; // already resolved, no-op
-  const weapon = battleshipWeaponAt(activeRound, row, col);
-  if(!weapon) return; // defensive — every cell has a mapped weapon given a full-coverage pool
-  showFinishConfirm(`Attack row ${row + 1}, column ${col + 1} using ${weapon}? This can't be undone.`, () => performBattleshipAttack(row, col, weapon), "Confirm attack", "Attack");
+  if(((activeRound.used_weapons || {})[mySide] || []).includes(weapon)) return; // already spent
+  battleshipArmedWeapon = weapon;
+  battleshipArmedTarget = null;
+  renderAll();
 }
-async function performBattleshipAttack(row, col, weapon){
+// Judgment call: confirming an armed square still goes through showFinishConfirm, same as every
+// other Battleship attack confirmation — the ticket's "a confirm/cancel pair finalizes" describes
+// the inline arm-then-confirm/cancel shape, but doesn't say whether "confirm" itself should be a
+// second, harder-to-misclick step; kept consistent with the rest of this app's attack-confirmation
+// convention rather than making this one attack type single-tap.
+function attemptConfirmBattleshipFreeAttack(){
+  if(!battleshipArmedWeapon || !battleshipArmedTarget) return;
+  const [row, col] = battleshipArmedTarget;
+  const weapon = battleshipArmedWeapon;
+  showFinishConfirm(`Attack row ${row + 1}, column ${col + 1} using ${weapon}? This can't be undone.`, () => performBattleshipFreeAttack(weapon, row, col, false), "Confirm attack", "Attack");
+}
+// Judgment call: forfeiting also gets its own confirm — it's a real, irreversible loss (the weapon
+// is gone, no points, no target chosen), not a harmless "close this panel" action, so it's treated
+// with the same weight as a real attack rather than a bare single-tap Cancel.
+function attemptCancelBattleshipFreeAttack(){
+  if(!battleshipArmedWeapon) return;
+  const weapon = battleshipArmedWeapon;
+  showFinishConfirm(`Forfeit ${weapon} with no attack? This can't be undone and earns no points.`, () => performBattleshipFreeAttack(weapon, 0, 0, true), "Forfeit this weapon?", "Forfeit");
+}
+async function performBattleshipFreeAttack(weapon, row, col, wasted){
   const mySide = myTeamId();
   if(!mySide || !activeRound) return;
   let result;
   try{
-    result = await Store.resolveBattleshipAttack(activeRound.id, mySide, row, col, weapon);
+    result = await Store.resolveFreeAttack(activeRound.id, mySide, weapon, row, col, wasted);
   }catch(e){
     console.error("attack failed", e);
     showToast("Couldn't resolve that attack — try again.");
     return;
   }
-  if(result && "hit" in result){
+  battleshipArmedWeapon = null;
+  battleshipArmedTarget = null;
+  if(result && result.already_used){
+    // Either this weapon or (in a same-side teammate race) the target square got spent by someone
+    // else a moment first — the weapon itself is still burned server-side either way, there's just
+    // nothing more for THIS call to do beyond refreshing to the real current state below.
+    showToast("That weapon was already used — refreshing.");
+  } else if(result && result.wasted){
+    showToast(`${weapon} forfeited — no attack made.`);
+  } else if(result && "hit" in result){
     activeRound = {...activeRound, attacks:{...(activeRound.attacks || {}), [mySide]:result.attacks}};
     if(result.sunk){
       const oppShips = (activeRound.ships || {})[battleshipOppositeSide(mySide)] || [];
@@ -4185,17 +4275,19 @@ function makeBattleshipCell(label, className, onClick, title){
   if(onClick) cell.addEventListener("click", onClick);
   return cell;
 }
-// Item 2: Attack Grid cells before they're resolved show the actual weapon image, same
+// Checklist item / (formerly) Attack Grid cell: shows the actual weapon image, same
 // weapons/<slug>.png asset + onerror-swap-to-BLANK fallback makeTile()/makeClaimSquare() already
-// use — not the plain text label the old .bs-unknown cell showed.
-function makeBattleshipWeaponCell(weaponName, onClick){
+// use. outcomeIcon (hit/miss glyph) overlays the image once this weapon has been used and resolved
+// to a real result — a wasted/forfeited weapon passes no icon, just the .bs-wasted greyscale below.
+function makeBattleshipWeaponCell(weaponName, onClick, outcomeIcon){
   const cell = document.createElement("button");
   cell.type = "button";
   cell.className = "bs-cell bs-unknown";
   cell.title = weaponName;
   cell.disabled = !onClick;
   cell.innerHTML = `<img class="bs-weapon-image" src="weapons/${slug(weaponName)}.png" alt="" draggable="false">` +
-    `<span class="bs-weapon-name">${escapeHtml(weaponName)}</span>`;
+    `<span class="bs-weapon-name">${escapeHtml(weaponName)}</span>` +
+    (outcomeIcon ? `<span class="bs-outcome-icon">${outcomeIcon}</span>` : "");
   const image = cell.querySelector(".bs-weapon-image");
   image.onerror = function(){
     this.insertAdjacentHTML("afterend", BLANK);
@@ -4388,42 +4480,97 @@ function renderBattleshipPlacementBoard(mySide, size){
 }
 // Battle phase: "My Fleet" (own ships, showing the opponent's hits on them) and "Attack Grid" (own
 // attack history against the opponent — hit/miss/unknown, ship shapes never shown), side by side.
+// Free-choice checklist (replaces the old fixed-coordinate Attack Grid): every weapon in this
+// side's weapon_list, in whatever order the RPC shuffled it — unused ones open the target-picker
+// (attemptBattleshipChecklistWeapon), used-with-an-outcome show hit/miss, used-with-no-outcome
+// (a forfeit, or lost a same-side-teammate race for the target square) show a plain greyed state.
+function renderBattleshipChecklist(mySide, size){
+  const wrap = document.createElement("div");
+  const list = (activeRound.weapon_list || {})[mySide] || [];
+  const used = new Set((activeRound.used_weapons || {})[mySide] || []);
+  const outcomeByWeapon = new Map();
+  Object.values((activeRound.attacks || {})[mySide] || {}).forEach(rec => { if(rec && rec.weapon) outcomeByWeapon.set(rec.weapon, rec); });
+  const canAct = activeRound.phase === "battle" && !activeRound.ended_at;
+
+  const grid = document.createElement("div");
+  grid.className = "bs-checklist";
+  list.forEach(weapon => {
+    if(!used.has(weapon)){
+      grid.appendChild(makeBattleshipWeaponCell(weapon, canAct ? () => attemptBattleshipChecklistWeapon(weapon) : null));
+      return;
+    }
+    const outcome = outcomeByWeapon.get(weapon);
+    const cell = makeBattleshipWeaponCell(weapon, null, outcome ? (outcome.hit ? "💥" : "·") : null);
+    cell.classList.add(outcome ? (outcome.hit ? "bs-hit" : "bs-miss") : "bs-wasted");
+    grid.appendChild(cell);
+  });
+  wrap.appendChild(grid);
+  return wrap;
+}
+// Target-picker (item: free-choice checklist) — reuses the same masked hit/miss/unknown visual the
+// old Attack Grid used, but every unresolved square is clickable now (no per-square weapon
+// mapping). Judgment call: tapping a DIFFERENT unresolved square while one is already armed just
+// moves the arm there for free rather than requiring an explicit un-arm step first — the ticket's
+// "tap to arm, confirm/cancel pair finalizes" doesn't address correcting a misclick, and forcing a
+// real attack-or-forfeit choice off a single mistaken tap seemed unnecessarily harsh. Only Confirm
+// (attack the armed square) or Cancel (forfeit the whole weapon) actually spend anything.
+function renderBattleshipTargetPicker(mySide, weapon, size){
+  const wrap = document.createElement("div");
+  const myAttacks = (activeRound.attacks || {})[mySide] || {};
+  const grid = battleshipGridEl(size);
+  for(let r = 0; r < size; r++){
+    for(let c = 0; c < size; c++){
+      const key = `${r},${c}`;
+      const rec = myAttacks[key];
+      if(rec && rec.hit){ grid.appendChild(makeBattleshipCell("💥", "bs-hit", null)); continue; }
+      if(rec){ grid.appendChild(makeBattleshipCell("·", "bs-miss", null)); continue; }
+      const armed = Boolean(battleshipArmedTarget) && battleshipArmedTarget[0] === r && battleshipArmedTarget[1] === c;
+      const className = "bs-unknown" + (armed ? " bs-armed" : "");
+      grid.appendChild(makeBattleshipCell("", className, () => { battleshipArmedTarget = [r, c]; renderAll(); }));
+    }
+  }
+  wrap.appendChild(grid);
+
+  const controls = document.createElement("div");
+  controls.className = "bs-picker-controls";
+  if(battleshipArmedTarget){
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "primary";
+    confirmBtn.textContent = "Confirm Attack";
+    confirmBtn.addEventListener("click", attemptConfirmBattleshipFreeAttack);
+    controls.appendChild(confirmBtn);
+  }
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.textContent = "Forfeit " + weapon;
+  cancelBtn.addEventListener("click", attemptCancelBattleshipFreeAttack);
+  controls.appendChild(cancelBtn);
+  wrap.appendChild(controls);
+  return wrap;
+}
 function renderBattleshipBattleBoard(mySide, size){
   const wrap = document.createElement("div");
   wrap.className = "bs-battle-boards";
 
   const fleetCol = document.createElement("div");
   fleetCol.className = "bs-board-col";
+  fleetCol.style.setProperty("--bs-size", size);
   fleetCol.innerHTML = `<div class="bs-board-label">My Fleet</div>`;
   fleetCol.appendChild(battleshipFleetGridEl(mySide, true, size));
   wrap.appendChild(fleetCol);
 
-  const myAttacks = (activeRound.attacks || {})[mySide] || {};
-  const attackCol = document.createElement("div");
-  attackCol.className = "bs-board-col";
-  attackCol.innerHTML = `<div class="bs-board-label">Attack Grid</div>`;
-  const attackGrid = battleshipGridEl(size);
-  const canAttack = !activeRound.ended_at;
-  for(let r = 0; r < size; r++){
-    for(let c = 0; c < size; c++){
-      const key = `${r},${c}`;
-      const rec = myAttacks[key];
-      if(rec && rec.hit) attackGrid.appendChild(makeBattleshipCell("💥", "bs-hit", null));
-      else if(rec) attackGrid.appendChild(makeBattleshipCell("·", "bs-miss", null));
-      else{
-        // A cell can end up with no mapped weapon at all if too many weapons are excluded to fill
-        // every cell (battleshipWeaponPool() falls back to whatever's left, under size*size) —
-        // leave it genuinely unclickable rather than a dead click with no feedback, and don't ask
-        // makeBattleshipWeaponCell to render a nonexistent weapon's image/caption.
-        const weapon = battleshipWeaponAt(activeRound, r, c);
-        attackGrid.appendChild(weapon
-          ? makeBattleshipWeaponCell(weapon, canAttack ? () => attemptBattleshipAttack(r, c) : null)
-          : makeBattleshipCell("", "bs-unknown", null));
-      }
-    }
+  const rightCol = document.createElement("div");
+  rightCol.className = "bs-board-col";
+  rightCol.style.setProperty("--bs-size", size);
+  if(battleshipArmedWeapon){
+    rightCol.innerHTML = `<div class="bs-board-label">Target for ${escapeHtml(battleshipArmedWeapon)}</div>`;
+    rightCol.appendChild(renderBattleshipTargetPicker(mySide, battleshipArmedWeapon, size));
+  } else {
+    rightCol.innerHTML = `<div class="bs-board-label">Weapons</div>`;
+    rightCol.appendChild(renderBattleshipChecklist(mySide, size));
   }
-  attackCol.appendChild(attackGrid);
-  wrap.appendChild(attackCol);
+  wrap.appendChild(rightCol);
   return wrap;
 }
 // Item 9: real board views for both sides, stacked vertically (not side by side like
@@ -4533,7 +4680,8 @@ function renderRoster(){
         card.querySelector(".no").addEventListener("click", () => { confirmingId = null; renderRoster(); });
       } else {
         card.innerHTML = `<div class="top"><span class="nm">${escapeHtml(b.name)}</span><span class="ct">${pointsFor(id)} pts</span></div>` +
-          (id === me.id ? '<div class="you">YOU</div>' : "");
+          (id === me.id ? '<div class="you">YOU</div>' : "") +
+          (b.idle ? '<div class="idle-badge">IDLE</div>' : "");
 
         // Self-removal goes through "Leave Room" instead (item 9) — the kick button here is only
         // for removing a roommate, which the RLS policy already allows.
@@ -4734,6 +4882,25 @@ document.getElementById("togglePublicBtn").addEventListener("click", async () =>
     btn.disabled = false;
   }
 });
+// Idle toggle (item 3): persists to boards.idle, then a full syncNow()+renderAll() so every place
+// that reads boards[me.id].idle — the button label, the roster badge, activeRoomMembers() for the
+// NEXT round's team formation — picks it up immediately rather than waiting for the next poll.
+document.getElementById("toggleIdleBtn").addEventListener("click", async () => {
+  const next = !boards[me.id]?.idle;
+  const btn = document.getElementById("toggleIdleBtn");
+  btn.disabled = true;
+  try{
+    await Store.setIdle(me.id, next);
+    showToast(next ? "You're idle — sitting out the next round" : "Welcome back — you're in for the next round");
+  }catch(e){
+    console.error("idle toggle failed", e);
+    showToast("Couldn't update idle status — try again.");
+  } finally {
+    btn.disabled = false;
+  }
+  await syncNow();
+  renderAll();
+});
 document.getElementById("startGridBingoBtn").addEventListener("click", () => {
   document.getElementById("gridBingoConfig").dataset.open = "true";
   buildStartRoundConfig();
@@ -4772,8 +4939,8 @@ document.getElementById("cancelGridBingoBtn").addEventListener("click", () => {
   renderGridBingoControls();
 });
 document.getElementById("confirmGridBingoBtn").addEventListener("click", async () => {
-  if(Object.entries(boards).length < 2){
-    showToast("Need at least 2 people in this room to start a round.");
+  if(activeRoomMembers().length < 2){
+    showToast("Need at least 2 people who aren't idle in this room to start a round.");
     return;
   }
   document.getElementById("gridBingoConfig").dataset.open = "false";
@@ -4934,14 +5101,20 @@ document.addEventListener("visibilitychange", async () => {
   await syncNow();
   renderAll();
 });
-// Item 6: "R" toggles ship orientation while a ship is selected for placement — same effect as the
-// on-screen orient button, just faster once you're used to it. Guarded to only fire while
-// Battleship placement is actually the thing on screen with a ship queued, and never while the
-// user is typing into some unrelated input (room code, chat-adjacent fields, etc.).
+// "R" toggles ship orientation — a standing value used for whatever gets placed NEXT, exactly like
+// the on-screen orient button (item 2): neither requires a ship to already be selected first, so a
+// player can decide "vertical" up front and then pick a ship, instead of being forced to select a
+// ship before they're allowed to set its orientation. Previously this listener alone required
+// battleshipPendingLength truthy — the on-screen button never did — so the hotkey and the button
+// disagreed with each other; this makes them consistent. Still guarded to only fire while
+// Battleship placement is actually the thing on screen and not yet locked in (already readied), and
+// never while the user is typing into some unrelated input (room code, chat-adjacent fields, etc.).
 document.addEventListener("keydown", e => {
   if(e.key !== "r" && e.key !== "R") return;
   if(!activeRound || activeRound.game_type !== "battleship" || activeRound.phase !== "placement" || activeRound.ended_at) return;
-  if(!battleshipPendingLength || isSpectator()) return;
+  if(isSpectator()) return;
+  const mySide = myTeamId();
+  if(!mySide || (activeRound.ready?.[mySide] || []).includes(me.id)) return;
   const tag = document.activeElement && document.activeElement.tagName;
   if(tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
   battleshipOrientation = battleshipOrientation === "h" ? "v" : "h";
