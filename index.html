@@ -298,23 +298,26 @@
      wins over whatever base .bs-cell background the empty cell already has. */
   .bs-cell.bs-preview-valid{background:rgba(77,255,166,.32) !important;border-color:var(--utility) !important;}
   .bs-cell.bs-preview-invalid{background:rgba(255,77,106,.32) !important;border-color:var(--melee) !important;}
-  /* Item 3: space-evenly (not a fixed gap) so the space before the first board, between the two,
+  /* Item 3 (spacing polish): space-evenly so the space before the first board, between the two,
      and after the second are always the SAME width — a fixed gap alongside columns that shrink
      below their half-width ceiling (Small/Medium) left all the leftover room stacked on one side
-     instead. No gap left to reserve room for, so .bs-board-col's own width below no longer
-     subtracts anything for it — at the ceiling (Large, or any size once both columns fill 100%
-     between them) the boards simply end up flush with zero gap, which is consistent with "equal"
-     in the degenerate case, not a bug. */
+     instead. */
   .bs-battle-boards{display:flex;justify-content:space-evenly;margin-top:20px;}
-  /* Item 2: each column caps at the SMALLER of half the available width (guarantees no stacking/
-     scroll, ever) and the tile-size-driven cell calculation (so Small/Medium actually shrink
-     instead of always sitting at that half-width ceiling like the previous fixed-50% fix did).
-     --bs-size is set directly on this element (not just on the .bs-grid child — custom properties
-     don't flow upward to a parent) so this calc() can read it; --tile-min here is the LOCAL,
-     scaled-down override renderBattleshipBattleBoard sets on its own wrapper (see bsMin above),
-     not the page's global tile-size value — reusing that verbatim never actually differed between
-     settings at this half-width scale, confirmed live (see TILE_SIZES' own bsMin comment). */
-  .bs-board-col{flex:0 0 auto;width:min(50%, calc(var(--bs-size) * var(--tile-min) + (var(--bs-size) - 1) * 8px));}
+  /* Item 2 (compact sizing): each column caps at the SMALLER of half the available width minus a
+     RESERVED minimum gap, and the tile-size-driven cell calculation (so Small/Medium actually
+     shrink instead of always sitting at the ceiling). --bs-size is set directly on this element
+     (not just the .bs-grid child — custom properties don't flow upward) so this calc() can read
+     it; --tile-min here is the LOCAL, scaled override renderBattleshipBattleBoard sets (see bsMin
+     above), not the page's global tile-size value.
+     Vanishing-gap root cause (this round's item 1, confirmed live): the previous formula was
+     min(50%, tile-driven) with NO gap reservation at all — at the ceiling (both columns clamped to
+     exactly half), space-evenly then had zero leftover to distribute, so the two boards rendered
+     flush with a real, literal zero-width gap. This wasn't zoom-specific — reproducing at Medium/
+     80%/grid4 showed a large, perfectly fine gap in isolation; the failure mode is any combination
+     (narrower zoomed-effective width, bigger grid_size, etc.) where the ceiling actually binds. The
+     "-8px" below reserves a guaranteed minimum on EVERY column regardless of whether the ceiling
+     binds, so a real gap always exists even in the worst case. */
+  .bs-board-col{flex:0 0 auto;width:min(calc(50% - 8px), calc(var(--bs-size) * var(--tile-min) + (var(--bs-size) - 1) * 8px));}
   .bs-board-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:8px;}
   .bs-ready-row{margin-top:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;}
   .bs-ready-row button{background:none;border:1px solid var(--panel-line);color:var(--dim);border-radius:7px;padding:7px 14px;font-size:13px;cursor:pointer;font-family:inherit;}
@@ -323,9 +326,18 @@
   .bs-ready-status{font-size:12px;color:var(--dim);}
   /* Free-choice weapon checklist — not an NxN spatial grid like .bs-grid (grid_size²+5 items,
      shuffled, no coordinates), so it gets its own auto-fill sizing rather than the --bs-size-driven
-     one. Reuses .bs-cell's own weapon-image layout via makeBattleshipWeaponCell(). Item 2: minmax's
-     floor is now the same LOCAL, scaled --tile-min the two boards use (was a fixed 84px, ignoring
-     tile size entirely) — auto-fill still decides the actual column count on its own. */
+     one; auto-fill still decides the actual column count on its own. Reuses .bs-cell's own
+     weapon-image layout via makeBattleshipWeaponCell(). Floor is the same LOCAL, tile-size- (and,
+     item 4, viewport-) driven --tile-min the two boards use.
+     Tried and reverted: matching .bs-board-col's own min(50%-gap, tile-driven) ceiling formula
+     here too, for pixel-perfect parity even once the boards clamp. Broke outright once tested live
+     — the checklist isn't a child of .bs-battle-boards (it's a sibling, full page width, not half),
+     so that "50%" resolved against the CHECKLIST's own near-full-width box instead of the boards
+     row, producing a ~170px floor instead of the intended ~30-50px one. Reverted to the plain
+     --tile-min floor below: correct and parity-matching in the common (unclamped) case, with a
+     disclosed mismatch only once a bigger grid_size genuinely clamps the boards on a narrow
+     viewport — pixel-perfect parity in that edge case too would need a JS-measured width, not a
+     CSS percentage, since the two aren't in the same containing block. */
   .bs-checklist{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--tile-min),1fr));gap:8px;}
   .bs-cell.bs-wasted{opacity:.4;filter:grayscale(1);}
   .bs-cell.bs-wasted .bs-weapon-name{text-decoration:line-through;}
@@ -592,6 +604,24 @@
   .public-room-code{font-weight:700;letter-spacing:.05em;}
   .public-room-members{font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .public-room-join{width:auto;margin-top:0;flex:0 0 auto;padding:8px 14px;}
+
+  /* Mobile pass (this app had zero real breakpoints before this). 600px matches
+     BATTLESHIP_MOBILE_QUERY exactly (see battleshipBsMin()) — one canonical breakpoint for both. */
+  @media (max-width:600px){
+    /* Item 3: confirmed via real-viewport audit (375/390/430px) that the account bar's 5 text
+       buttons + username were the ONLY horizontal-overflow source anywhere in the app at 375/390px
+       (430px had none). Wrapping is the robust fix — guaranteed to never overflow regardless of
+       button count or label length, unlike trying to shrink text/padding down to some exact
+       magic width. */
+    .account-bar{flex-wrap:wrap;row-gap:8px;}
+    .room-actions{flex-wrap:wrap;row-gap:6px;}
+    .room-actions button{padding:5px 8px;font-size:11px;}
+    /* Item 5: the weapon-name label is what forces .bs-checklist's minmax floor to stay wide
+       enough to fit text — dropping it here (not just shrinking the floor) is what actually buys
+       the extra columns at mobile's smaller bsMinMobile sizes; the image alone still identifies
+       the weapon (same as hovering/tapping shows its title attribute). */
+    .bs-checklist .bs-weapon-name{display:none;}
+  }
 
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
 
@@ -1599,11 +1629,32 @@ const TEAM_ACCENTS = {
 // a separate, smaller range scoped to just the battle-phase view (see renderBattleshipBattleBoard's
 // local --tile-min override) so Small/Medium can actually come in under that ceiling while Large
 // still reaches it (i.e. "fills close to full available width", per spec).
+// bsMinMobile (item 4): a genuinely smaller scale for narrow real-device viewports, gated by
+// matchMedia on viewport width (see BATTLESHIP_MOBILE_QUERY/battleshipBsMin below) — NOT by the
+// user's own tile-size/zoom choices, which item 4 explicitly calls out as the wrong signal (zoom
+// is item 1's problem, a desktop-only interaction; this is about a phone's actual, fixed screen).
+// Judgment call, tuned against the real .bs-board-col half-width ceiling at 375px (the narrowest
+// of the three required widths — measured live at 163.5px per column there): the spec's own anchor
+// ("Large" ≈ desktop's bsMin.small, 55px) would exceed that ceiling at the DEFAULT grid_size (4),
+// clamping the boards below the checklist's own unclamped size and breaking item 4's own "always
+// the same cell size" requirement for the single most common case. 34px is the largest value that
+// stays under that ceiling at grid_size 4 (4*34+24=160 ≤ 163.5) — parity holds for every tile size
+// at the default grid, and only drifts (boards clamp, checklist doesn't) at grid_size 5/6, a host
+// opt-in rather than the default. See this round's report for exact measured px comparisons.
 const TILE_SIZES = [
-  {id:"small",label:"Small",min:"160px",icon:"42px",name:"13px",bsMin:"55px"},
-  {id:"medium",label:"Medium",min:"210px",icon:"56px",name:"14.5px",bsMin:"75px"},
-  {id:"large",label:"Large",min:"280px",icon:"76px",name:"16.5px",bsMin:"100px"}
+  {id:"small",label:"Small",min:"160px",icon:"42px",name:"13px",bsMin:"55px",bsMinMobile:"20px"},
+  {id:"medium",label:"Medium",min:"210px",icon:"56px",name:"14.5px",bsMin:"75px",bsMinMobile:"27px"},
+  {id:"large",label:"Large",min:"280px",icon:"76px",name:"16.5px",bsMin:"100px",bsMinMobile:"34px"}
 ];
+// Single canonical mobile breakpoint reused by both this matchMedia check and the matching
+// @media(max-width:600px) CSS block (account bar wrap, checklist label drop) — one number, not two
+// that could drift apart.
+const BATTLESHIP_MOBILE_QUERY = "(max-width: 600px)";
+function battleshipBsMin(){
+  const size = TILE_SIZES.find(x => x.id === (me?.tileSize || "medium")) || TILE_SIZES[1];
+  const isMobile = Boolean(window.matchMedia && window.matchMedia(BATTLESHIP_MOBILE_QUERY).matches);
+  return isMobile ? size.bsMinMobile : size.bsMin;
+}
 
 const HITMARKER = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M7 7 L13 13"/><path d="M25 7 L19 13"/><path d="M7 25 L13 19"/><path d="M25 25 L19 19"/></svg>';
 const BLANK = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="14" height="14" rx="3"/></svg>';
@@ -4713,11 +4764,11 @@ function renderBattleshipAttackGrid(mySide, size){
 }
 function renderBattleshipBattleBoard(mySide, size){
   const wrap = document.createElement("div");
-  // Item 2: scoped --tile-min override for every grid inside this view (both boards AND the
+  // Item 2/4: scoped --tile-min override for every grid inside this view (both boards AND the
   // checklist below) — see TILE_SIZES' own bsMin comment for why the page's global --tile-min
-  // wouldn't have worked here.
-  const bsMin = (TILE_SIZES.find(x => x.id === (me?.tileSize || "medium")) || TILE_SIZES[1]).bsMin;
-  wrap.style.setProperty("--tile-min", bsMin);
+  // wouldn't have worked here, and battleshipBsMin() for the mobile-viewport switch (item 4).
+  wrap.style.setProperty("--tile-min", battleshipBsMin());
+  wrap.style.setProperty("--bs-size", size);
 
   const checklistLabel = document.createElement("div");
   checklistLabel.className = "bs-board-label";
@@ -4754,8 +4805,7 @@ function renderBattleshipBattleBoard(mySide, size){
 function battleshipSpectatorPairEl(size, labelSuffix, colBuilder){
   const boards = document.createElement("div");
   boards.className = "bs-battle-boards";
-  const bsMin = (TILE_SIZES.find(x => x.id === (me?.tileSize || "medium")) || TILE_SIZES[1]).bsMin;
-  boards.style.setProperty("--tile-min", bsMin);
+  boards.style.setProperty("--tile-min", battleshipBsMin());
   ["team-A", "team-B"].forEach(side => {
     const entry = roundEntries.find(e => e.player_id === side);
     const col = document.createElement("div");
