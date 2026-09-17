@@ -278,6 +278,14 @@
   /* Checklist hit/miss overlay — dims the weapon image underneath so the glyph reads clearly on
      top, same idea as .tile.done's own stamp overlay. */
   .bs-cell .bs-outcome-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;background:rgba(12,7,20,.45);pointer-events:none;}
+  /* Item 1 root cause (confirmed via the real rendered DOM, not just the source diff): the existing
+     .difficulty-dot rule is scoped ".tile .difficulty-dot" — makeBattleshipWeaponCell() genuinely
+     inserts the span (difficultyBadgeHtml()'s inline background color IS present), but .bs-cell is
+     not a .tile descendant, so NONE of that rule's position/size ever applied — a bare <span> with
+     no explicit width/height computes to 0x0 and simply doesn't render, independent of .bs-cell's
+     own positioning context (which is position:relative and fine on its own). Scoping the same
+     rule to .bs-cell too — not moving it, since .tile still needs its own copy — fixes it outright. */
+  .bs-cell .difficulty-dot{position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.4);pointer-events:none;z-index:1;}
   .bs-cell svg{width:55%;height:55%;color:var(--panel-line);}
   /* Distinguishable ships (item 5): alternating tint by ship index — border-radius is set inline
      per cell (battleshipShipCellVisual()) so only a ship's true start/end reads as rounded, with
@@ -290,7 +298,14 @@
      wins over whatever base .bs-cell background the empty cell already has. */
   .bs-cell.bs-preview-valid{background:rgba(77,255,166,.32) !important;border-color:var(--utility) !important;}
   .bs-cell.bs-preview-invalid{background:rgba(255,77,106,.32) !important;border-color:var(--melee) !important;}
-  .bs-battle-boards{display:flex;gap:20px;margin-top:20px;}
+  /* Item 3: space-evenly (not a fixed gap) so the space before the first board, between the two,
+     and after the second are always the SAME width — a fixed gap alongside columns that shrink
+     below their half-width ceiling (Small/Medium) left all the leftover room stacked on one side
+     instead. No gap left to reserve room for, so .bs-board-col's own width below no longer
+     subtracts anything for it — at the ceiling (Large, or any size once both columns fill 100%
+     between them) the boards simply end up flush with zero gap, which is consistent with "equal"
+     in the degenerate case, not a bug. */
+  .bs-battle-boards{display:flex;justify-content:space-evenly;margin-top:20px;}
   /* Item 2: each column caps at the SMALLER of half the available width (guarantees no stacking/
      scroll, ever) and the tile-size-driven cell calculation (so Small/Medium actually shrink
      instead of always sitting at that half-width ceiling like the previous fixed-50% fix did).
@@ -299,7 +314,7 @@
      scaled-down override renderBattleshipBattleBoard sets on its own wrapper (see bsMin above),
      not the page's global tile-size value — reusing that verbatim never actually differed between
      settings at this half-width scale, confirmed live (see TILE_SIZES' own bsMin comment). */
-  .bs-board-col{flex:0 0 auto;width:min(calc(50% - 10px), calc(var(--bs-size) * var(--tile-min) + (var(--bs-size) - 1) * 8px));}
+  .bs-board-col{flex:0 0 auto;width:min(50%, calc(var(--bs-size) * var(--tile-min) + (var(--bs-size) - 1) * 8px));}
   .bs-board-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:8px;}
   .bs-ready-row{margin-top:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;}
   .bs-ready-row button{background:none;border:1px solid var(--panel-line);color:var(--dim);border-radius:7px;padding:7px 14px;font-size:13px;cursor:pointer;font-family:inherit;}
@@ -324,10 +339,15 @@
   /* Item 6: live ships-remaining counter, both on the round leaderboard cards (spectators +
      participants) and inline in each battle-board column label. */
   .bs-ships-remaining{font-size:11px;font-weight:700;color:var(--dim);text-transform:none;letter-spacing:normal;}
-  /* Stacked spectator boards (item 9) — vertical, not side by side like renderSpectatorBoards()
-     uses for Grid Bingo/TTT, per spec. */
-  .bs-spectator-stack{display:flex;flex-direction:column;gap:24px;}
-  .bs-spectator-side-label{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;}
+  /* Full spectator redesign (item 4): two full-width sections, each its own side-by-side pair
+     (reusing .bs-battle-boards/.bs-board-col for identical spacing/sizing to the real participant
+     boards) — Fleets on top, Weapons below. */
+  .bs-spectator-wrap{display:flex;flex-direction:column;gap:28px;}
+  .bs-spectator-section-title{font-size:13px;font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;}
+  /* Masked placeholder (item 4's "progress" mode — reuses UNKNOWN_TILE, the same dashed-square icon
+     .tile.masked already uses elsewhere) — .bs-cell's own generic svg rule already sizes/colors it,
+     this just adds the dashed border .tile.masked also gets. */
+  .bs-cell.bs-masked{border-style:dashed;cursor:default;}
   /* Live-round roster (item 6). */
   .round-roster{display:none;flex-wrap:wrap;gap:18px;margin:-4px 0 14px;font-size:12.5px;}
   .round-roster.show{display:flex;}
@@ -2570,6 +2590,14 @@ function buildTileSizes(){
       me.tileSize = size.id;
       applyTileSize();
       buildTileSizes();
+      // Item 3 root cause (confirmed via real rendered widths sampled across animation frames,
+      // not a CSS transition at all — the cell width stayed frozen at the OLD size for 600ms+ with
+      // zero intermediate values): Grid Bingo/TTT pick up a --tile-min change for free through the
+      // live CSS cascade, but Battleship's battle boards read a LOCAL, JS-computed override of
+      // --tile-min (see renderBattleshipBattleBoard's bsMin lookup) that's only recalculated at
+      // render time — nothing here ever re-rendered the board, so the stale override just sat there
+      // until whatever next unrelated action happened to trigger one (worst case, the next poll).
+      renderBoard();
       try{ await Store.saveProfile(me.id, {tile_size:size.id}); }catch(e){ console.error("tile size save failed", e); }
     });
     box.appendChild(b);
@@ -4397,6 +4425,17 @@ function makeBattleshipCell(label, className, onClick, title){
   if(onClick) cell.addEventListener("click", onClick);
   return cell;
 }
+// Item 4: the generic masked/unknown placeholder — same UNKNOWN_TILE icon .tile.masked uses
+// elsewhere, just on a .bs-cell. Needs innerHTML (not makeBattleshipCell's own textContent, which
+// would render this SVG string as escaped literal text instead of markup).
+function makeBattleshipMaskedCell(){
+  const cell = document.createElement("button");
+  cell.type = "button";
+  cell.className = "bs-cell bs-masked";
+  cell.disabled = true;
+  cell.innerHTML = UNKNOWN_TILE;
+  return cell;
+}
 // Checklist item / (formerly) Attack Grid cell: shows the actual weapon image, same
 // weapons/<slug>.png asset + onerror-swap-to-BLANK fallback makeTile()/makeClaimSquare() already
 // use. outcomeIcon (hit/miss glyph) overlays the image once this weapon has been used and resolved
@@ -4481,7 +4520,11 @@ function battleshipFleetGridEl(side, revealShips, size){
       if(rec){ grid.appendChild(makeBattleshipCell("·", "bs-miss", null)); continue; }
       const info = shipMeta.get(key);
       if(info){ grid.appendChild(makeBattleshipShipCell(info, null)); continue; }
-      grid.appendChild(makeBattleshipCell("", "", null));
+      // This fallback is reached for a genuine empty-water square (revealShips:true — a real
+      // participant's own "My Fleet", where blank is correct) AND for every unattacked square when
+      // revealShips is false (spectator "progress" mode, item 4 — where blank used to leak "there's
+      // definitely no ship here" by omission; the masked icon now hides that distinction too).
+      grid.appendChild(revealShips ? makeBattleshipCell("", "", null) : makeBattleshipMaskedCell());
     }
   }
   return grid;
@@ -4514,7 +4557,15 @@ function renderBattleshipPlacementBoard(mySide, size){
   placedLengths.forEach(len => { const i = remaining.indexOf(len); if(i !== -1) remaining.splice(i, 1); });
 
   const iAmReady = (activeRound.ready?.[mySide] || []).includes(me.id);
-  const locked = iAmReady || Boolean(activeRound.ended_at);
+  // Item 2 root cause: this used to also lock on iAmReady, which made every ship cell's onClick
+  // null the instant you readied up (see makeBattleshipCell/makeBattleshipShipCell — no onClick
+  // means a genuinely disabled button, not just a soft click-through). placeBattleshipShip() and
+  // pickUpBattleshipShip() were never actually broken — they were simply unreachable from a
+  // readied player's own UI, which is exactly the client whose ship-move was supposed to trigger
+  // the reset (in a solo round, the only person who COULD move a ship). Being ready is no longer a
+  // hard lock on the fleet itself now that moving a ship is meant to un-ready automatically —
+  // only a genuinely ended round still locks it.
+  const locked = Boolean(activeRound.ended_at);
 
   const palette = document.createElement("div");
   palette.className = "bs-palette";
@@ -4695,26 +4746,79 @@ function renderBattleshipBattleBoard(mySide, size){
   wrap.appendChild(boards);
   return wrap;
 }
-// Item 9: real board views for both sides, stacked vertically (not side by side like
-// renderSpectatorBoards() uses for Grid Bingo/TTT — spec calls for stacked here specifically).
-// Shares battleshipFleetGridEl() with the battle phase's own "My Fleet" column: spectator_visibility
-// "full" reveals ship shapes (revealShips:true, same visual a side sees of its own fleet);
-// "progress" never does (revealShips:false — hits/misses only, exactly the Attack-Grid look, no
-// ship shapes underneath even on an unattacked cell).
-function renderBattleshipSpectatorBoards(size){
-  const wrap = document.createElement("div");
-  wrap.className = "bs-spectator-stack";
-  const revealShips = activeRound.spectator_visibility === "full";
+// Item 4 (full redesign — replaces the old vertically-stacked single-fleet-per-row layout
+// entirely): a shared helper for a side-by-side team-A/team-B pair, reusing the exact same
+// .bs-battle-boards/.bs-board-col CSS (and the same locally-scoped, tile-size-driven --tile-min
+// override renderBattleshipBattleBoard uses) so both spectator sections size/space identically to
+// the real participant boards, per spec.
+function battleshipSpectatorPairEl(size, labelSuffix, colBuilder){
+  const boards = document.createElement("div");
+  boards.className = "bs-battle-boards";
+  const bsMin = (TILE_SIZES.find(x => x.id === (me?.tileSize || "medium")) || TILE_SIZES[1]).bsMin;
+  boards.style.setProperty("--tile-min", bsMin);
   ["team-A", "team-B"].forEach(side => {
     const entry = roundEntries.find(e => e.player_id === side);
     const col = document.createElement("div");
-    const label = document.createElement("div");
-    label.className = "bs-spectator-side-label";
-    label.textContent = entry?.player_name || side;
-    col.appendChild(label);
-    col.appendChild(battleshipFleetGridEl(side, revealShips, size));
-    wrap.appendChild(col);
+    col.className = "bs-board-col";
+    col.style.setProperty("--bs-size", size);
+    col.innerHTML = `<div class="bs-board-label">${escapeHtml(entry?.player_name || side)}${labelSuffix}</div>`;
+    col.appendChild(colBuilder(side));
+    boards.appendChild(col);
   });
+  return boards;
+}
+// Section 2's own checklist, deliberately NOT renderBattleshipChecklist() — that one's arming/
+// clicking (attemptBattleshipChecklistWeapon) is meant for the viewer's own side only and has no
+// concept of "which side is this," so reusing it here for an opponent's checklist would be the
+// wrong function even though a spectator's no-op myTeamId() happens to make it harmless. "progress"
+// masks every UNUSED weapon (masked/hidden placeholder, item 4 — spectators shouldn't learn what's
+// still available to either side); used ones always show their real hit/miss outcome either way.
+function renderBattleshipSpectatorChecklist(side, revealAll){
+  const wrap = document.createElement("div");
+  const list = (activeRound.weapon_list || {})[side] || [];
+  const used = new Set((activeRound.used_weapons || {})[side] || []);
+  const outcomeByWeapon = new Map();
+  Object.values((activeRound.attacks || {})[side] || {}).forEach(rec => { if(rec && rec.weapon) outcomeByWeapon.set(rec.weapon, rec); });
+  const grid = document.createElement("div");
+  grid.className = "bs-checklist";
+  list.forEach(weapon => {
+    if(!used.has(weapon)){
+      grid.appendChild(revealAll ? makeBattleshipWeaponCell(weapon, null) : makeBattleshipMaskedCell());
+      return;
+    }
+    const outcome = outcomeByWeapon.get(weapon);
+    const cell = makeBattleshipWeaponCell(weapon, null, outcome ? (outcome.hit ? "💥" : "·") : null);
+    cell.classList.add(outcome ? (outcome.hit ? "bs-hit" : "bs-miss") : "bs-wasted");
+    grid.appendChild(cell);
+  });
+  wrap.appendChild(grid);
+  return wrap;
+}
+// Full spectator redesign (item 4): two full-width sections — Fleets, then Weapons — each its own
+// side-by-side team-A/team-B pair. "full" visibility reveals everything either side's own player
+// currently sees of themselves; "progress" masks ship positions AND unused weapons alike, only
+// ever revealing something once it's actually been hit/missed/used.
+function renderBattleshipSpectatorBoards(size){
+  const wrap = document.createElement("div");
+  wrap.className = "bs-spectator-wrap";
+  const revealAll = activeRound.spectator_visibility === "full";
+
+  const fleetsSection = document.createElement("div");
+  const fleetsTitle = document.createElement("div");
+  fleetsTitle.className = "bs-spectator-section-title";
+  fleetsTitle.textContent = "Fleets";
+  fleetsSection.appendChild(fleetsTitle);
+  fleetsSection.appendChild(battleshipSpectatorPairEl(size, "", side => battleshipFleetGridEl(side, revealAll, size)));
+  wrap.appendChild(fleetsSection);
+
+  const weaponsSection = document.createElement("div");
+  const weaponsTitle = document.createElement("div");
+  weaponsTitle.className = "bs-spectator-section-title";
+  weaponsTitle.textContent = "Weapons";
+  weaponsSection.appendChild(weaponsTitle);
+  weaponsSection.appendChild(battleshipSpectatorPairEl(size, " Weapons", side => renderBattleshipSpectatorChecklist(side, revealAll)));
+  wrap.appendChild(weaponsSection);
+
   return wrap;
 }
 function renderBattleshipRound(){
@@ -5264,7 +5368,9 @@ document.addEventListener("keydown", e => {
   if(!activeRound || activeRound.game_type !== "battleship" || activeRound.phase !== "placement" || activeRound.ended_at) return;
   if(isSpectator()) return;
   const mySide = myTeamId();
-  if(!mySide || (activeRound.ready?.[mySide] || []).includes(me.id)) return;
+  // Item 2: no longer gated on already being ready, same fix as renderBattleshipPlacementBoard's
+  // own locked variable — ready no longer hard-locks the fleet.
+  if(!mySide) return;
   const tag = document.activeElement && document.activeElement.tagName;
   if(tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
   battleshipOrientation = battleshipOrientation === "h" ? "v" : "h";
