@@ -291,17 +291,15 @@
   .bs-cell.bs-preview-valid{background:rgba(77,255,166,.32) !important;border-color:var(--utility) !important;}
   .bs-cell.bs-preview-invalid{background:rgba(255,77,106,.32) !important;border-color:var(--melee) !important;}
   .bs-battle-boards{display:flex;gap:20px;margin-top:20px;}
-  /* Item 5: My Fleet and Attack Grid must always sit side by side, never stack, at every tile size —
-     a FIXED px-per-cell column width (the previous item-1 fix, keyed off --tile-min alone) could
-     total more than the page's own width once both columns were added up, which is exactly what
-     forced .bs-battle-boards' old flex-wrap to kick in and stack them. Fixing the column to a share
-     of its own PARENT's width instead (half, minus half the gap) makes that overflow impossible —
-     .bs-grid's own max-width (still keyed off --bs-size/--tile-min, see makeBattleshipWeaponCell's
-     sibling battleshipGridEl()) then only ever matters as a ceiling BELOW 100% of this column (Small
-     tile sizes shrink the grid to that ceiling, centered via margin:0 auto); at Large, where the
-     ceiling would exceed the column, the grid's own width:auto default just fills the column outright
-     instead, i.e. close to half the page. */
-  .bs-board-col{flex:0 0 calc(50% - 10px);width:calc(50% - 10px);min-width:0;}
+  /* Item 2: each column caps at the SMALLER of half the available width (guarantees no stacking/
+     scroll, ever) and the tile-size-driven cell calculation (so Small/Medium actually shrink
+     instead of always sitting at that half-width ceiling like the previous fixed-50% fix did).
+     --bs-size is set directly on this element (not just on the .bs-grid child — custom properties
+     don't flow upward to a parent) so this calc() can read it; --tile-min here is the LOCAL,
+     scaled-down override renderBattleshipBattleBoard sets on its own wrapper (see bsMin above),
+     not the page's global tile-size value — reusing that verbatim never actually differed between
+     settings at this half-width scale, confirmed live (see TILE_SIZES' own bsMin comment). */
+  .bs-board-col{flex:0 0 auto;width:min(calc(50% - 10px), calc(var(--bs-size) * var(--tile-min) + (var(--bs-size) - 1) * 8px));}
   .bs-board-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:8px;}
   .bs-ready-row{margin-top:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;}
   .bs-ready-row button{background:none;border:1px solid var(--panel-line);color:var(--dim);border-radius:7px;padding:7px 14px;font-size:13px;cursor:pointer;font-family:inherit;}
@@ -310,13 +308,19 @@
   .bs-ready-status{font-size:12px;color:var(--dim);}
   /* Free-choice weapon checklist — not an NxN spatial grid like .bs-grid (grid_size²+5 items,
      shuffled, no coordinates), so it gets its own auto-fill sizing rather than the --bs-size-driven
-     one. Reuses .bs-cell's own weapon-image layout via makeBattleshipWeaponCell(). */
-  .bs-checklist{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;}
+     one. Reuses .bs-cell's own weapon-image layout via makeBattleshipWeaponCell(). Item 2: minmax's
+     floor is now the same LOCAL, scaled --tile-min the two boards use (was a fixed 84px, ignoring
+     tile size entirely) — auto-fill still decides the actual column count on its own. */
+  .bs-checklist{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--tile-min),1fr));gap:8px;}
   .bs-cell.bs-wasted{opacity:.4;filter:grayscale(1);}
   .bs-cell.bs-wasted .bs-weapon-name{text-decoration:line-through;}
-  /* Armed checklist weapon (items 3/4) — every other unused weapon just goes disabled/dim via the
-     base button:disabled styling, no separate class needed for that half. */
-  .bs-cell.bs-armed{border-color:var(--mark);box-shadow:0 0 0 2px var(--mark-soft);}
+  /* Armed checklist weapon (item 3) — clearly highlighted. Confirmed missing last round: relying
+     on the native :disabled style for every OTHER unused weapon did nothing, since :disabled only
+     strips cursor:pointer here (see .bs-cell:disabled above) with no visible dimming of its own —
+     and item 3 also reverses that design anyway, since those weapons must stay clickable (re-arm),
+     so .bs-dimmed below is a real, separate, purely-visual class rather than relying on :disabled. */
+  .bs-cell.bs-armed{border-color:var(--mark);box-shadow:0 0 0 2px var(--mark-soft);background:var(--mark-soft);}
+  .bs-cell.bs-dimmed{opacity:.5;}
   /* Item 6: live ships-remaining counter, both on the round leaderboard cards (spectators +
      participants) and inline in each battle-board column label. */
   .bs-ships-remaining{font-size:11px;font-weight:700;color:var(--dim);text-transform:none;letter-spacing:normal;}
@@ -783,6 +787,15 @@
       <label class="toggle-row">
         <span class="toggle-switch"><input type="checkbox" id="battleshipSameWeaponListCheckbox"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
         <span class="toggle-text">Same weapon list for both sides<span class="toggle-sub">Off: each side gets its own independently-shuffled list. On: both sides get the identical list.</span></span>
+      </label>
+    </div>
+    <!-- Battleship-only, team mode + points scoring only (item 6) — same visibility condition as
+         Grid Bingo's own underdogBonusRow above. Default ON. -->
+    <div class="bingo-config-row" id="battleshipUnderdogBonusRow">
+      <label>Underdog bonus</label>
+      <label class="toggle-row">
+        <span class="toggle-switch"><input type="checkbox" id="battleshipUnderdogBonusCheckbox"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+        <span class="toggle-text">Underdog bonus<span class="toggle-sub">On uneven teams, the smaller side scores double per-attack/hit points and a bigger sink bonus.</span></span>
       </label>
     </div>
     <!-- Shown only when weapon_difficulty has at least one "hard" tag (item 2) and hidden for
@@ -1558,10 +1571,18 @@ const TEAM_ACCENTS = {
 // so a full board reads closer to how it looked before the resize feature existed. icon/name keep
 // the same proportional relationship to min that the old tiers had (icon ~= 26% of min; name
 // scales more gently than icon, same as before).
+// bsMin (item 2): Battleship's battle-phase view needs TWO side-by-side NxN grids (plus a
+// checklist) to fit in the same page width a single .grid.bingo-grid has all to itself — reusing
+// --tile-min's own 160/210/280 range verbatim was tried and, live-tested, never actually mattered:
+// even Small's 160px already needs 4*160+24=664px for a 4-wide grid, well past the ~490px half of
+// this app's 1000px page width, so every setting clamped to that same ceiling regardless. bsMin is
+// a separate, smaller range scoped to just the battle-phase view (see renderBattleshipBattleBoard's
+// local --tile-min override) so Small/Medium can actually come in under that ceiling while Large
+// still reaches it (i.e. "fills close to full available width", per spec).
 const TILE_SIZES = [
-  {id:"small",label:"Small",min:"160px",icon:"42px",name:"13px"},
-  {id:"medium",label:"Medium",min:"210px",icon:"56px",name:"14.5px"},
-  {id:"large",label:"Large",min:"280px",icon:"76px",name:"16.5px"}
+  {id:"small",label:"Small",min:"160px",icon:"42px",name:"13px",bsMin:"55px"},
+  {id:"medium",label:"Medium",min:"210px",icon:"56px",name:"14.5px",bsMin:"75px"},
+  {id:"large",label:"Large",min:"280px",icon:"76px",name:"16.5px",bsMin:"100px"}
 ];
 
 const HITMARKER = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M7 7 L13 13"/><path d="M25 7 L19 13"/><path d="M7 25 L13 19"/><path d="M25 25 L19 19"/></svg>';
@@ -1590,7 +1611,7 @@ let roundEntries = [];
 let roundViewingId = null;
 let gridBingoConfig = {gridSize:3,cardMode:"shared",scoringMode:"race",cardVisibility:"hidden",teamFormation:"random",manualTeams:{},teamSharedEdit:false,underdogBonus:"none"};
 let tttConfig = {gridSize:3,teamFormation:"random",manualTeams:{},takeBacks:false,drawOnFull:false,scoringMode:"race"};
-let battleshipConfig = {gridSize:4,scoringMode:"points",teamFormation:"random",manualTeams:{},sameWeaponList:false};
+let battleshipConfig = {gridSize:4,scoringMode:"points",teamFormation:"random",manualTeams:{},sameWeaponList:false,underdogBonus:true};
 // Fleet by grid size (Battleship Phase 1) — the larger side in an uneven-teams round drops the
 // length-1 Sub from this same array rather than getting its own separate list; see
 // battleshipFleetForSide(). Ship "names" by length, for toasts ("You sank their Destroyer!").
@@ -1654,6 +1675,9 @@ let ticTacToeClaimsSeen = new Map();
 // Battleship ship-hit notifications (item 6): last-seen "attacks against me" snapshot per round id
 // — same seed-then-diff convention as ticTacToeClaimsSeen above.
 let battleshipAttacksSeen = new Map();
+// Battleship ready-reset notifications (item 5): last-seen ready._lastReset.at per round id — same
+// seed-then-diff convention as the others above.
+let battleshipReadyResetSeen = new Map();
 // Teammate mark/unmark toast (item 4): last-seen marked_by snapshot of MY team's own round_entries
 // row, per round id — same seed-then-diff convention as ticTacToeClaimsSeen/blockedAttemptsSeen
 // above, so a fresh join never replays earlier changes as new.
@@ -2297,6 +2321,24 @@ async function syncNow(){
           });
         }
         battleshipAttacksSeen.set(activeRound.id, nextAttacksOnMe);
+      }
+    }
+    // Ready-reset notifications (item 5): tell my OTHER online teammates (never the actor
+    // themselves — they already see their own Ready button flip back) when someone on my side
+    // moved a ship and cleared everyone's ready status. Seeded on the first sight of THIS round's
+    // ready state (battleshipReadyResetSeen.has(), not just truthy — a reset that happened before
+    // this client ever looked must never replay as new) rather than gated on room-wide
+    // hadRosterBaseline, same round-scoped convention as ticTacToeClaimsSeen above.
+    if(activeRound && activeRound.game_type === "battleship"){
+      const mySide = myTeamId();
+      if(mySide){
+        const lastReset = (activeRound.ready || {})._lastReset || null;
+        const seenBefore = battleshipReadyResetSeen.has(activeRound.id);
+        const prevReset = battleshipReadyResetSeen.get(activeRound.id) || null;
+        if(seenBefore && lastReset && lastReset.side === mySide && lastReset.playerId !== me.id && (!prevReset || lastReset.at > prevReset.at)){
+          showToast(`${lastReset.playerName} moved a ship — ready status reset.`);
+        }
+        battleshipReadyResetSeen.set(activeRound.id, lastReset);
       }
     }
     // Battleship safety net (same "derive don't rely on one client" principle as Tic-Tac-Toe's
@@ -3042,6 +3084,8 @@ function buildStartRoundConfig(){
   document.getElementById("takeBacksRow").style.display = isTTT ? "" : "none";
   document.getElementById("drawOnFullRow").style.display = (isTTT && tttConfig.takeBacks) ? "" : "none";
   document.getElementById("sameWeaponListRow").style.display = isBattleship ? "" : "none";
+  // Item 6: same visibility condition as Grid Bingo's own underdogBonusRow above.
+  document.getElementById("battleshipUnderdogBonusRow").style.display = (isBattleship && isTeamMode && battleshipConfig.scoringMode === "points") ? "" : "none";
 
   // Max Hard Weapons (step 2, item 2): only worth showing once at least one weapon is actually
   // tagged "hard" — otherwise the control has nothing to do. Hidden for "All" mode by definition
@@ -3062,6 +3106,7 @@ function buildStartRoundConfig(){
     // condition itself (sink the whole enemy fleet) — it just means points stay 0.
     buildBingoOptions("scoringModeOptions", [{label:"Race only (no points tracked)",value:"race"},{label:"Points (per-attack + sink bonuses)",value:"points"}], battleshipConfig.scoringMode, value => { battleshipConfig.scoringMode = value; buildStartRoundConfig(); });
     document.getElementById("battleshipSameWeaponListCheckbox").checked = Boolean(battleshipConfig.sameWeaponList);
+    document.getElementById("battleshipUnderdogBonusCheckbox").checked = Boolean(battleshipConfig.underdogBonus);
   } else if(!isTTT){
     if(!isAll){
       const cardModeOptions = isTeamMode
@@ -3239,6 +3284,7 @@ async function startBattleship(){
     free_square_bias:cardFilterConfig.freeSquareBias,
     spectator_visibility:cardFilterConfig.spectatorVisibility,
     same_weapon_list:Boolean(battleshipConfig.sameWeaponList),
+    battleship_underdog_bonus:Boolean(battleshipConfig.underdogBonus),
     winner_id:null,
     ended_at:null,
     started_by:me.name,
@@ -3751,19 +3797,29 @@ async function checkBattleshipRoundEnd(round){
 // Recomputed from scratch off rounds.attacks/ships every time (spec: never accumulated), for both
 // sides together so a win's +250 always lands even though only the WINNING side's own attack
 // triggered it — the other side's number just doesn't change, recomputing it anyway is harmless.
+// Item 6: the smaller side of an uneven team split, or null when teams are even/missing — same
+// size-comparison shape battleshipFleetForSide() already uses for its own handicap.
+function battleshipUnderdogSide(round){
+  const teams = round.teams || {};
+  const sizeA = (teams["team-A"] || []).length, sizeB = (teams["team-B"] || []).length;
+  if(sizeA === sizeB || sizeA === 0 || sizeB === 0) return null;
+  return sizeA < sizeB ? "team-A" : "team-B";
+}
 function computeBattleshipPoints(round, side){
   if(round.scoring_mode !== "points") return 0;
   const myAttacks = (round.attacks || {})[side] || {};
   const oppShips = (round.ships || {})[battleshipOppositeSide(side)] || [];
+  const isUnderdog = round.battleship_underdog_bonus && battleshipUnderdogSide(round) === side;
+  const perAttack = isUnderdog ? 20 : 10, hitBonus = isUnderdog ? 10 : 5, sinkBonus = isUnderdog ? 125 : 100;
   let points = 0;
   Object.values(myAttacks).forEach(rec => {
-    points += 10; // every resolved attack
-    if(rec && rec.hit) points += 5; // hit bonus
+    points += perAttack; // every resolved attack
+    if(rec && rec.hit) points += hitBonus; // hit bonus
   });
   oppShips.forEach(ship => {
-    if(ship.cells.every(([r,c]) => { const rec = myAttacks[`${r},${c}`]; return rec && rec.hit; })) points += 100; // sank this ship
+    if(ship.cells.every(([r,c]) => { const rec = myAttacks[`${r},${c}`]; return rec && rec.hit; })) points += sinkBonus; // sank this ship
   });
-  if(round.winner_id === side) points += 250;
+  if(round.winner_id === side) points += 250; // win bonus — unaffected by underdog (item 6)
   return points;
 }
 async function syncBattleshipScores(round){
@@ -3785,6 +3841,23 @@ function battleshipSideFullyReady(round, side){
   const ready = new Set(round.ready?.[side] || []);
   return present.length > 0 && present.every(pid => ready.has(pid));
 }
+// Item 5: any placement/pickup on a side that already has at least one confirmed Ready clears
+// THAT side's whole ready list — the layout changed, so any earlier agreement no longer applies.
+// _lastReset piggybacks on the same rounds.ready jsonb column (no schema change needed — jsonb
+// tolerates an extra sibling key alongside the "team-A"/"team-B" arrays every other read here keys
+// off by name, never iterates broadly) so every OTHER syncing client can name who did it via the
+// same seed-then-diff notification convention as ticTacToeClaimsSeen/battleshipAttacksSeen (see
+// syncNow()) — the actor's own client already sees their Ready button flip back visibly, so it's
+// deliberately excluded from that toast.
+async function battleshipClearReadyOnFleetChange(mySide){
+  const currentlyReady = (activeRound.ready || {})[mySide] || [];
+  if(currentlyReady.length === 0) return;
+  const nextReady = {...(activeRound.ready || {}), [mySide]:[], _lastReset:{side:mySide, playerId:me.id, playerName:me.name, at:Date.now()}};
+  try{
+    await Store.saveBattleshipReady(activeRound.id, nextReady);
+    activeRound = {...activeRound, ready:nextReady};
+  }catch(e){ console.error("ready reset failed", e); }
+}
 async function placeBattleshipShip(length, startRow, startCol){
   const mySide = myTeamId();
   if(!mySide || !activeRound || activeRound.phase !== "placement") return;
@@ -3803,6 +3876,7 @@ async function placeBattleshipShip(length, startRow, startCol){
   }
   activeRound = {...activeRound, ships:nextShips};
   battleshipPendingLength = null;
+  await battleshipClearReadyOnFleetChange(mySide);
   renderAll();
 }
 // Item 8: tapping a placed ship removes it AND re-queues it as the pending placement (correct
@@ -3827,6 +3901,7 @@ async function pickUpBattleshipShip(shipIndex){
   activeRound = {...activeRound, ships:nextShips};
   battleshipPendingLength = ship.cells.length;
   if(ship.cells.length >= 2) battleshipOrientation = ship.cells[0][0] === ship.cells[1][0] ? "h" : "v";
+  await battleshipClearReadyOnFleetChange(mySide);
   renderAll();
 }
 // Appends (never replaces) my uid into ready[mySide], then optimistically calls
@@ -3872,15 +3947,15 @@ async function cancelBattleshipReady(){
   activeRound = {...activeRound, ready:nextReady};
   renderAll();
 }
-// Free-choice weapon checklist (items 3/4 — no forfeit, no confirm step): tapping an unused weapon
-// arms it and, per spec, immediately disables every other unused weapon (see renderBattleshipChecklist's
-// own canAct gate) — there's no un-arm action, since self-reporting a kill IS the commitment. The
-// armed weapon then resolves with a single direct tap on the always-visible Attack Grid.
+// Free-choice weapon checklist (items 3/4, re-armable per item 3): tapping an unused weapon arms
+// it; tapping a DIFFERENT unused weapon while one is already armed just re-arms to the new one —
+// no penalty, no attack happens — so a misclick is correctable before it costs anything. Only a
+// tap on the Attack Grid actually spends the currently-armed weapon (performBattleshipFreeAttack).
 function attemptBattleshipChecklistWeapon(weapon){
   const mySide = myTeamId();
   if(!mySide || !activeRound || activeRound.phase !== "battle" || activeRound.ended_at) return;
-  if(battleshipArmedWeapon) return; // one weapon at a time — nothing else can arm until this resolves
   if(((activeRound.used_weapons || {})[mySide] || []).includes(weapon)) return; // already spent
+  if(battleshipArmedWeapon === weapon) return; // already armed, nothing to do
   battleshipArmedWeapon = weapon;
   renderAll();
 }
@@ -4326,6 +4401,9 @@ function makeBattleshipCell(label, className, onClick, title){
 // weapons/<slug>.png asset + onerror-swap-to-BLANK fallback makeTile()/makeClaimSquare() already
 // use. outcomeIcon (hit/miss glyph) overlays the image once this weapon has been used and resolved
 // to a real result — a wasted/forfeited weapon passes no icon, just the .bs-wasted greyscale below.
+// Item 4: difficultyBadgeHtml() reused verbatim, same as every other weapon tile in the app — safe
+// here specifically because this cell is only ever built for a side's OWN checklist (never the
+// opponent's, which would leak difficulty info about weapons the opponent hasn't chosen to reveal).
 function makeBattleshipWeaponCell(weaponName, onClick, outcomeIcon){
   const cell = document.createElement("button");
   cell.type = "button";
@@ -4334,6 +4412,7 @@ function makeBattleshipWeaponCell(weaponName, onClick, outcomeIcon){
   cell.disabled = !onClick;
   cell.innerHTML = `<img class="bs-weapon-image" src="weapons/${slug(weaponName)}.png" alt="" draggable="false">` +
     `<span class="bs-weapon-name">${escapeHtml(weaponName)}</span>` +
+    difficultyBadgeHtml(weaponName) +
     (outcomeIcon ? `<span class="bs-outcome-icon">${outcomeIcon}</span>` : "");
   const image = cell.querySelector(".bs-weapon-image");
   image.onerror = function(){
@@ -4525,10 +4604,11 @@ function renderBattleshipPlacementBoard(mySide, size){
   wrap.appendChild(readyRow);
   return wrap;
 }
-// Battle phase weapon checklist (items 3/4): every weapon in this side's weapon_list, in whatever
-// order the RPC shuffled it. Unused weapons are only clickable while NOTHING is armed yet — the
-// moment one is armed, every other unused weapon (armed one included — there's no un-arm action)
-// goes inert until the Attack Grid below resolves it. used-with-an-outcome show hit/miss,
+// Battle phase weapon checklist (items 3/4, re-armable per item 3): every unused weapon stays
+// clickable at all times (not just while nothing is armed) — tapping a different one just re-arms
+// to it, no penalty. The currently-armed weapon gets .bs-armed (highlighted); every OTHER unused
+// weapon gets .bs-dimmed — a purely visual dim (still clickable), never the native disabled state,
+// since disabling them would make switching impossible. used-with-an-outcome show hit/miss,
 // used-with-no-outcome (lost a same-side-teammate race for the target square) show a plain greyed
 // state — the forfeit/"wasted" outcome is no longer reachable from this UI at all (item 4).
 function renderBattleshipChecklist(mySide, size){
@@ -4537,7 +4617,7 @@ function renderBattleshipChecklist(mySide, size){
   const used = new Set((activeRound.used_weapons || {})[mySide] || []);
   const outcomeByWeapon = new Map();
   Object.values((activeRound.attacks || {})[mySide] || {}).forEach(rec => { if(rec && rec.weapon) outcomeByWeapon.set(rec.weapon, rec); });
-  const canArm = activeRound.phase === "battle" && !activeRound.ended_at && !battleshipArmedWeapon;
+  const canArm = activeRound.phase === "battle" && !activeRound.ended_at;
 
   const grid = document.createElement("div");
   grid.className = "bs-checklist";
@@ -4546,6 +4626,7 @@ function renderBattleshipChecklist(mySide, size){
       const armed = battleshipArmedWeapon === weapon;
       const cell = makeBattleshipWeaponCell(weapon, canArm ? () => attemptBattleshipChecklistWeapon(weapon) : null);
       if(armed) cell.classList.add("bs-armed");
+      else if(battleshipArmedWeapon) cell.classList.add("bs-dimmed");
       grid.appendChild(cell);
       return;
     }
@@ -4581,6 +4662,11 @@ function renderBattleshipAttackGrid(mySide, size){
 }
 function renderBattleshipBattleBoard(mySide, size){
   const wrap = document.createElement("div");
+  // Item 2: scoped --tile-min override for every grid inside this view (both boards AND the
+  // checklist below) — see TILE_SIZES' own bsMin comment for why the page's global --tile-min
+  // wouldn't have worked here.
+  const bsMin = (TILE_SIZES.find(x => x.id === (me?.tileSize || "medium")) || TILE_SIZES[1]).bsMin;
+  wrap.style.setProperty("--tile-min", bsMin);
 
   const checklistLabel = document.createElement("div");
   checklistLabel.className = "bs-board-label";
@@ -4593,12 +4679,14 @@ function renderBattleshipBattleBoard(mySide, size){
 
   const fleetCol = document.createElement("div");
   fleetCol.className = "bs-board-col";
+  fleetCol.style.setProperty("--bs-size", size);
   fleetCol.innerHTML = `<div class="bs-board-label">My Fleet ${battleshipShipsRemainingLabel(activeRound, mySide)}</div>`;
   fleetCol.appendChild(battleshipFleetGridEl(mySide, true, size));
   boards.appendChild(fleetCol);
 
   const attackCol = document.createElement("div");
   attackCol.className = "bs-board-col";
+  attackCol.style.setProperty("--bs-size", size);
   const oppSide = battleshipOppositeSide(mySide);
   attackCol.innerHTML = `<div class="bs-board-label">Attack Grid ${battleshipShipsRemainingLabel(activeRound, oppSide)}</div>`;
   attackCol.appendChild(renderBattleshipAttackGrid(mySide, size));
@@ -4921,15 +5009,28 @@ document.getElementById("togglePublicBtn").addEventListener("click", async () =>
     btn.disabled = false;
   }
 });
-// Idle toggle (item 3): persists to boards.idle, then a full syncNow()+renderAll() so every place
-// that reads boards[me.id].idle — the button label, the roster badge, activeRoomMembers() for the
-// NEXT round's team formation — picks it up immediately rather than waiting for the next poll.
+// Idle toggle (item 3, root-caused further in item 1): both the button label (renderRoomBar) and
+// the roster dot (renderRoster) already read the exact same boards[me.id].idle — there were never
+// two disagreeing sources. The bug was that this handler updated NOTHING locally and relied
+// entirely on the syncNow() round-trip below to pick up the change — live-tested against the real
+// DB (Prefer: return=representation on the exact PATCH Store.setIdle sends) and confirmed the
+// UPDATE matches its own row's WHERE clause but returns ZERO rows: boards has no UPDATE policy at
+// all (it was presence-only insert/delete before this feature; this PATCH is the only UPDATE ever
+// issued against it), so the write silently no-ops server-side despite the 204 success status.
+// This local optimistic write is a real, needed fix on its own (the round-trip is genuinely slow
+// otherwise) but is NOT sufficient by itself — until an UPDATE policy permitting a user to modify
+// their own boards row is added server-side, syncNow() below will keep re-fetching the untouched
+// false/Go-Idle state and silently revert this optimism on every single poll tick (every 5s), not
+// just on a manual refresh. Flagged in the report; no further client-side fix is possible for that
+// part.
 document.getElementById("toggleIdleBtn").addEventListener("click", async () => {
   const next = !boards[me.id]?.idle;
   const btn = document.getElementById("toggleIdleBtn");
   btn.disabled = true;
   try{
     await Store.setIdle(me.id, next);
+    if(boards[me.id]) boards[me.id].idle = next;
+    renderAll();
     // Item 1: round-formation only ever reads activeRoomMembers() at round START, so un-idling
     // mid-round naturally stays a spectator for whatever's already in progress — this toast just
     // sets that expectation instead of implying instant participation.
@@ -5007,6 +5108,9 @@ document.getElementById("freeSquareCheckbox").addEventListener("change", e => {
 });
 document.getElementById("battleshipSameWeaponListCheckbox").addEventListener("change", e => {
   battleshipConfig.sameWeaponList = e.target.checked;
+});
+document.getElementById("battleshipUnderdogBonusCheckbox").addEventListener("change", e => {
+  battleshipConfig.underdogBonus = e.target.checked;
 });
 document.getElementById("muteBtn").addEventListener("click", async () => {
   me.muted = !me.muted;
